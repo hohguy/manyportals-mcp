@@ -1,0 +1,22 @@
+{
+  "portals": {
+    "PORTAL_A": {
+      "tokenEnv": "HUBSPOT_TOKEN_PORTAL_A",
+      "expectedHubId": 123456789,
+      "label": "Example Co A",
+      "apiHost": "api.hubapi.com",
+      "allowWrite": true,
+      "blockedProperties": ["*ssn*"],
+      "allowedObjects": ["notes", "tasks", "deals", "contacts"],
+      "allowedOperations": ["create", "update"],
+      "applyAllowedObjects": ["notes", "tasks"]
+    },
+    "PORTAL_B": {
+      "tokenEnv": "HUBSPOT_TOKEN_PORTAL_B",
+      "expectedHubId": 0,
+      "label": "Example Co B (US)",
+      "allowWrite": false
+    }
+  },
+  "writeMode": "propose"
+}

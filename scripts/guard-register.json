@@ -1,0 +1,572 @@
+[
+  {
+    "id": "out-guard/collapse-after-reassembly",
+    "why": "--out /Users would come back as //Users and slip the ancestor guard (#62).",
+    "file": "scripts/out-guard.sh",
+    "find": "      _out_collapse \"$(cd \"$parent\" && pwd -P)/$(basename \"$collapsed\")\" ;;\n",
+    "replace": "      printf '%s' \"$(cd \"$parent\" && pwd -P)/$(basename \"$collapsed\")\" ;;\n",
+    "test": "src/out-guard.test.ts",
+    "expect": "does not re-introduce a doubled slash",
+    "devOnly": false
+  },
+  {
+    "id": "out-guard/home-ancestor",
+    "why": "An ancestor of HOME would be accepted when the repo lives outside HOME.",
+    "file": "scripts/out-guard.sh",
+    "find": "  case \"$home/\" in\n    \"$out\"/*) echo \"FATAL: --out is an ANCESTOR of HOME \u2014 refusing (got: $out)\" >&2; return 1 ;;\n  esac\n",
+    "replace": "  : # guard removed by guard-register\n",
+    "test": "src/out-guard.test.ts",
+    "expect": "refuses an ancestor of HOME",
+    "devOnly": false
+  },
+  {
+    "id": "out-guard/refuse-unnormalized",
+    "why": "A path still holding // would be compared by patterns that cannot match it.",
+    "file": "scripts/out-guard.sh",
+    "find": "    *//*) echo \"FATAL: refusing unsafe --out (path is not normalized: $out)\" >&2; return 1 ;;\n",
+    "replace": "",
+    "test": "src/out-guard.test.ts",
+    "expect": "refuses an unnormalized path",
+    "devOnly": false
+  },
+  {
+    "id": "perm-check/stat-dialect-probe",
+    "why": "GNU stat -f is file system status, so a BSD-first probe succeeds on Linux with different semantics and the fallback never runs.",
+    "file": "scripts/perm-check.sh",
+    "find": "if stat -c '%a' . >/dev/null 2>&1; then  # idiom-ok: a dialect probe; failure is the answer it is looking for\n",
+    "replace": "if false; then # mutated: skip the GNU probe\n",
+    "test": "src/perm-check.test.ts",
+    "expect": "reads real modes under gnu",
+    "devOnly": false
+  },
+  {
+    "id": "cred-scan-tree/pattern-present",
+    "why": "Both halves: with the file-presence AND emptiness checks gone, $CRED is unbound, the command substitution subshell dies, HITS is empty and the scan prints clean (#99).",
+    "file": "scripts/cred-scan-tree.sh",
+    "find": "[ -f \"$PATTERN\" ] || {\n  echo \"cred-scan-tree: missing $PATTERN \u2014 cannot verify; failing closed\" >&2; exit 2; }\nsource \"$PATTERN\"\n[ -n \"${CRED:-}\" ] || {\n  echo \"cred-scan-tree: the CRED pattern is empty \u2014 cannot verify; failing closed\" >&2; exit 2; }\n",
+    "replace": "source \"$PATTERN\"\n",
+    "test": "src/cred-scan-tree.test.ts",
+    "expect": "exits 2 when the shared pattern file is",
+    "devOnly": false
+  },
+  {
+    "id": "credscan/pattern-present",
+    "why": "Both halves: with the file-presence AND emptiness checks gone, $CRED is unbound, the command substitution subshell dies, HITS is empty and the scan prints clean (#99).",
+    "file": "scripts/credscan.sh",
+    "find": "[ -f \"$PATTERN\" ] || {\n  echo \"credscan: missing $PATTERN \u2014 cannot verify; failing closed\" >&2; exit 1; }\nsource \"$PATTERN\"\n[ -n \"${CRED:-}\" ] || {\n  echo \"credscan: the CRED pattern is empty \u2014 cannot verify; failing closed\" >&2; exit 1; }\n",
+    "replace": "source \"$PATTERN\"\n",
+    "test": "src/credscan.test.ts",
+    "expect": "exits non-zero when the shared pattern file is missing",
+    "devOnly": false
+  },
+  {
+    "id": "staging-guard/marker-required",
+    "why": "Without it, rm -rf would accept any directory, which is the whole of #104.",
+    "file": "scripts/staging-guard.sh",
+    "find": "  if ! staging_marker_ok \"$dir\"; then\n    echo \"FATAL: refusing to remove the $what, because this tool did not create it.\" >&2\n    echo \"       $dir\" >&2\n    echo \"       A directory is removed here only while it carries a marker file\" >&2\n    echo \"       $STAGING_MARKER naming that same directory, written when this tool\" >&2\n    echo \"       created it. If you meant to reuse that path, remove it yourself first.\" >&2\n    return 1\n  fi\n",
+    "replace": "",
+    "test": "src/staging-guard.test.ts",
+    "expect": "REFUSES a directory it did not create",
+    "devOnly": false
+  },
+  {
+    "id": "staging-guard/symlink-refused",
+    "why": "A link at a marked directory would authorise removing a path other than the one checked.",
+    "file": "scripts/staging-guard.sh",
+    "find": "  if [ -L \"$dir\" ]; then\n    echo \"FATAL: refusing to remove the $what: it is a symlink\" >&2\n    echo \"       $dir\" >&2\n    return 1\n  fi\n",
+    "replace": "",
+    "test": "src/staging-guard.test.ts",
+    "expect": "refuses a symlink rather than reasoning about it",
+    "devOnly": false
+  },
+  {
+    "id": "staging-guard/file-containment",
+    "why": "A build artifact outside its expected directory would be removed.",
+    "file": "scripts/staging-guard.sh",
+    "find": "  if [ \"$actual\" != \"$expected\" ]; then\n    echo \"FATAL: refusing to remove $file: it is not inside $expected\" >&2\n    return 1\n  fi\n",
+    "replace": "",
+    "test": "src/staging-guard.test.ts",
+    "expect": "refuses a file outside the expected parent",
+    "devOnly": false
+  },
+  {
+    "id": "store/pending-offsets",
+    "why": "A read error on one trail file would discard lines already taken from another, blinding the cross-portal guard (#82).",
+    "file": "src/store/jsonl-dir.ts",
+    "find": "      pending.set(key, from + end)\n",
+    "replace": "      this.consumed.set(key, from + end)\n",
+    "test": "src/store/jsonl-dir.test.ts",
+    "expect": "loses nothing from the earlier file when a later one shrinks",
+    "devOnly": false
+  },
+  {
+    "id": "composition-root/write-mode",
+    "why": "The single line that makes the shipped propose mode real; hardcoding apply left 367/367 green (#85).",
+    "file": "src/index.ts",
+    "find": "    writeMode: deps.config.writeMode,\n",
+    "replace": "    writeMode: 'apply' as WriteMode,\n",
+    "test": "src/index.test.ts",
+    "expect": "refuses a pre-approval execute when the config says propose",
+    "devOnly": false
+  },
+  {
+    "id": "plans/draft-refusal-audited",
+    "why": "A caller probing which object types a portal accepts would leave no forensic trail (#84).",
+    "file": "src/plans/index.ts",
+    "find": "      this.auditRefusal(REFUSED_BEFORE_DRAFT, input.portalKey, 'draft', e)\n",
+    "replace": "",
+    "test": "src/plans/plans.test.ts",
+    "expect": "records a deny when draft refuses",
+    "devOnly": false
+  },
+  {
+    "id": "layout/node-reader-refuses-to-guess",
+    "why": "A reader that answers 'public' when it cannot tell is the #107 defect again.",
+    "file": "scripts/layout.mjs",
+    "find": "    throw new Error(\n      `no ${LAYOUT_MARKER} in ${root}, so which file set to scan is unknown. Refusing to ` +\n        `guess: guessing is what made an empty directory named 'public' turn these checks off (#107).`,\n    )\n",
+    "replace": "    return 'public'\n",
+    "test": "src/layout.test.ts",
+    "expect": "refuses when there is no declaration, rather than picking one",
+    "devOnly": false
+  },
+  {
+    "id": "layout/shell-reader-refuses-an-unknown-value",
+    "why": "A marker that says anything else must stop the run, not fall through to a default.",
+    "file": "scripts/layout.sh",
+    "find": "    *)\n      echo \"FATAL: $LAYOUT_MARKER says '$value'; expected exactly 'dev' or 'public'.\" >&2\n      return 1\n      ;;\n",
+    "replace": "    *)\n      printf 'public'\n      ;;\n",
+    "test": "src/layout.test.ts",
+    "expect": "refuses a declaration it does not recognise",
+    "devOnly": false
+  },
+  {
+    "id": "layout/shell-reader-trims-only-the-ends",
+    "why": "`tr -d '[:space:]'` deleted whitespace everywhere, so `d e v` was accepted as `dev` and credscan applied the wrong pathspec while reporting a clean tree (#127).",
+    "file": "scripts/layout.sh",
+    "find": "  value=\"$(cat \"$root/$LAYOUT_MARKER\")\"\n  value=\"${value#$'\\xef\\xbb\\xbf'}\"\n  value=\"${value#\"${value%%[![:space:]]*}\"}\"\n  value=\"${value%\"${value##*[![:space:]]}\"}\"\n",
+    "replace": "  value=\"$(tr -d '[:space:]' < \"$root/$LAYOUT_MARKER\")\"\n",
+    "test": "src/layout.test.ts",
+    "expect": "refuses a single internal space, in both readers",
+    "devOnly": false
+  },
+  {
+    "id": "layout/node-reader-does-not-follow-unicode-whitespace",
+    "why": "`.trim()` follows Unicode whitespace, so a BOM and a non-breaking space were accepted here and refused by the shell reader \u2014 the same declaration read two ways (#127).",
+    "file": "scripts/layout.mjs",
+    "find": "  const value = (raw.startsWith('\\ufeff') ? raw.slice(1) : raw).replace(\n    /^[ \\t\\n\\r\\v\\f]+|[ \\t\\n\\r\\v\\f]+$/g,\n    '',\n  )\n",
+    "replace": "  const value = raw.trim()\n",
+    "test": "src/layout.test.ts",
+    "expect": "refuses a trailing non-breaking space, in both readers",
+    "devOnly": false
+  },
+  {
+    "id": "credscan/scope-is-declared-not-sniffed",
+    "why": "`mkdir public` in the public repo used to switch this scan to the dev pathspec, which skips docs/*.md, and it reported clean (#107).",
+    "file": "scripts/credscan.sh",
+    "find": "if [ \"$LAYOUT\" = dev ]; then\n",
+    "replace": "if [ -d public ]; then\n",
+    "test": "src/credscan.test.ts",
+    "expect": "keeps scanning the public file set after someone creates a directory named public",
+    "devOnly": false
+  },
+  {
+    "id": "source-guard/identity-not-residence",
+    "why": "The private tree is inside the dev root, so 'resolves under $DEV_ROOT' published the private tree content under an allowlisted name (#106 H1).",
+    "file": "scripts/source-guard.sh",
+    "find": "  if [ \"$resolved\" != \"$src\" ]; then\n",
+    "replace": "  case \"$dir/\" in \"$devroot\"/*) return 0 ;; esac\n  if [ \"$resolved\" != \"$src\" ]; then\n",
+    "test": "src/source-guard.test.ts",
+    "expect": "refuses the private tree reached through a symlinked path COMPONENT",
+    "devOnly": false
+  },
+  {
+    "id": "out-guard/dot-leaf-resolved",
+    "why": "A `.` or `..` leaf survived normalization, so the HOME and ancestor checks compared a string that denoted somewhere else (#106).",
+    "file": "scripts/out-guard.sh",
+    "find": "    .|..)\n      # A `.` or `..` leaf names an EXISTING directory (the parent was checked just\n      # above), so resolve the whole path instead of pinning a canonical parent to a\n      # component whose meaning is \"somewhere else\".\n      _out_collapse \"$(cd \"$collapsed\" && pwd -P)\" ;;\n",
+    "replace": "    .|..)\n      _out_collapse \"$(cd \"$parent\" && pwd -P)/$(basename \"$collapsed\")\" ;;\n",
+    "test": "src/out-guard.test.ts",
+    "expect": "resolves a dot leaf, so it cannot denote one place and be compared as another",
+    "devOnly": false
+  },
+  {
+    "id": "staging-guard/marker-records-its-directory",
+    "why": "A hard-linked or copied marker is byte-identical; only the path recorded inside it says which directory it authorises (#106).",
+    "file": "scripts/staging-guard.sh",
+    "find": "  if [ \"$recorded\" != \"$resolved\" ]; then\n",
+    "replace": "  if false; then\n",
+    "test": "src/staging-guard.test.ts",
+    "expect": "refuses a marker HARD-linked from a real one",
+    "devOnly": false
+  },
+  {
+    "id": "staging-guard/marker-symlink-refused-before-reading",
+    "why": "`-f` follows a symlink, so a linked marker would be READ and its recorded path believed, describing a directory other than this one (#106).",
+    "file": "scripts/staging-guard.sh",
+    "find": "  if [ -L \"$marker\" ]; then\n",
+    "replace": "  if false; then\n",
+    "test": "src/staging-guard.test.ts",
+    "expect": "refuses a marker symlinked to a real one",
+    "devOnly": false
+  },
+  {
+    "id": "idiom-check/a-hit-fails-the-run",
+    "why": "A check that prints its findings and exits 0 is the class it exists to catch (#113).",
+    "file": "scripts/idiom-check.sh",
+    "find": "  if [ -n \"$hits\" ]; then\n    fail=1\n",
+    "replace": "  if [ -n \"$hits\" ]; then\n    fail=0\n",
+    "test": "src/idiom-check.test.ts",
+    "expect": "swallowed-status is caught in scripts/bad.sh",
+    "devOnly": false
+  },
+  {
+    "id": "idiom-check/stale-glob-is-not-a-pass",
+    "why": "Deleting the last file a rule watches would otherwise read as that rule passing.",
+    "file": "scripts/idiom-check.sh",
+    "find": "    fail=1; continue; }\n",
+    "replace": "    continue; }\n",
+    "test": "src/idiom-check.test.ts",
+    "expect": "fails when a rule matches no files, because a stale glob is a silent rule",
+    "devOnly": false
+  },
+  {
+    "id": "prose-check/cannot-read-is-not-clean",
+    "why": "`|| true` made an unreadable document report as clean prose; rc=2 must stop the run (#108).",
+    "file": "scripts/prose-check.sh",
+    "find": "  if [ \"$rc\" -gt 1 ]; then\n",
+    "replace": "  if false; then\n",
+    "test": "src/prose-check.test.ts",
+    "expect": "fails closed when a document cannot be read",
+    "devOnly": false
+  },
+  {
+    "id": "prose-check/overclaim-scan-must-fire",
+    "why": "Published prose claimed routing of every ACTION while reads may use the selected default; a scan that finds nothing must not read as clean prose.",
+    "file": "scripts/prose-check.sh",
+    "find": "scan -nHiE \"$OVERCLAIM\"\n",
+    "replace": "HITS=\"\"\n",
+    "test": "src/prose-check.test.ts",
+    "expect": "catches a routing claim about every action rather than every write",
+    "devOnly": false
+  },
+  {
+    "id": "enumerate/partial-list-is-not-a-clean-run",
+    "why": "A producer that dies partway left every gate certifying the prefix it managed to read (#109).",
+    "file": "scripts/enumerate.sh",
+    "find": "  if [ \"$rc\" -ne 0 ]; then\n",
+    "replace": "  if false; then\n",
+    "test": "src/perm-check.test.ts",
+    "expect": "fails closed when part of the tree cannot be read",
+    "devOnly": false
+  },
+  {
+    "id": "enumerate/the-temp-file-does-not-outlive-the-shell",
+    "why": "enum_tempfile's own append runs inside the caller's command substitution, so the parent's EXIT trap read an empty array and roughly ten thousand files accumulated in one session (#128).",
+    "file": "scripts/enumerate.sh",
+    "find": "  ENUM_TEMPFILES+=(\"$dest\")\n",
+    "replace": "  : # the parent-context registration, removed\n",
+    "test": "src/enumerate.test.ts",
+    "expect": "leaves nothing behind after a normal enumeration",
+    "devOnly": false
+  },
+  {
+    "id": "prepublish/scans-what-npm-packs",
+    "why": "files[] overrides git ignore rules, so a git-ignored credential file was clean to every git-based gate and packed by npm (#110 5a).",
+    "file": "scripts/prepublish-guard.sh",
+    "find": "  if(hits.length){\n",
+    "replace": "  if(false){\n",
+    "test": "src/prepublish-guard.test.ts",
+    "expect": "refuses a credential in a GIT-IGNORED file that npm packs anyway",
+    "devOnly": false
+  },
+  {
+    "id": "prepublish/pack-list-never-flattened",
+    "why": "Flattening npm's JSON paths into LINES split a filename containing a newline into two entries, neither a real path. Both halves resolved to real benign files, so both were scanned and counted, and the completeness assertion below compared two counts from that same corrupted list and agreed with itself: 'scanned all 6', clean, rc 0, while npm packed 5 files and the tarball carried the credential (#122).",
+    "file": "scripts/prepublish-guard.sh",
+    "find": "  const files=((entries[0]||{}).files||[]).map(f=>f.path);\n",
+    "replace": "  const files=((entries[0]||{}).files||[]).map(f=>f.path).join(\"\\n\").split(\"\\n\");\n",
+    "test": "src/prepublish-guard.test.ts",
+    "expect": "whose NAME contains a newline",
+    "devOnly": false
+  },
+  {
+    "id": "prepublish/every-packed-file-examined",
+    "why": "Without it, a run that scanned a SUBSET of the tarball prints the same clean result as one that read all of it. It went unregistered while five prepublish tests passed around it, and a reviewer's mutation of it survived every one of them, because the only input that reaches it also trips the grep-error branch first. The test isolates it with an npm shim that names a path which does not exist (#122, 2026-09-29 review finding 11).",
+    "file": "scripts/prepublish-guard.sh",
+    "find": "  if(scanned!==packed){\n",
+    "replace": "  if(false){\n",
+    "test": "src/prepublish-guard.test.ts",
+    "expect": "a packed path cannot be scanned",
+    "devOnly": false
+  },
+  {
+    "id": "prepublish/entry-point-must-be-runnable",
+    "why": "files[] names dist as a DIRECTORY, so an empty one satisfied existence while npm packed no entry point (#110 5d).",
+    "file": "scripts/prepublish-guard.sh",
+    "find": "    else if (st.size===0) gone.push(e+\" (entry point, empty)\");\n",
+    "replace": "    else if (false) gone.push(e);\n",
+    "test": "src/prepublish-guard.test.ts",
+    "expect": "refuses an entry point that exists but is empty",
+    "devOnly": false
+  },
+  {
+    "id": "audit/credential-shapes-never-stored",
+    "why": "The IN-MEMORY sink must route every event through the redaction stamp. Anchored on its call, because a sink that stops calling it is the defect; the redaction itself is pinned separately. The trail is append-only with no delete API, so anything written there is permanent (#112 7a).",
+    "file": "src/audit/index.ts",
+    "find": "    this.events.push(deepFreeze(stamp(event, { seq })))\n",
+    "replace": "    this.events.push(deepFreeze({ ...event, seq }))\n",
+    "test": "src/mcp/credential-echo.test.ts",
+    "expect": "through every registered tool, in three passes",
+    "devOnly": false
+  },
+  {
+    "id": "audit/the-file-sink-redacts-too",
+    "why": "The FILE sink must route every event through the redaction stamp. Two sinks, two entries, because one forgetting is exactly what a single shared mutation would hide. There are TWO sinks and now two call sites. One shared redactor used to mean one mutation covered both; the persisted sink is the one whose leak is durable, so it needs its own (#123).",
+    "file": "src/audit/index.ts",
+    "find": "    const stamped: StoredEvent = stamp(event, {\n      seq: this.ownSeq + 1,\n      writer: this.store.writer,\n    }) as StoredEvent\n",
+    "replace": "    const stamped: StoredEvent = {\n      ...event,\n      seq: this.ownSeq + 1,\n      writer: this.store.writer,\n    } as StoredEvent\n",
+    "test": "src/mcp/credential-echo.test.ts",
+    "expect": "SECRECY: a PEM body is unrecoverable",
+    "devOnly": false
+  },
+  {
+    "id": "mcp/credential-shapes-never-returned",
+    "why": "A refusal repeats the value it refused, so a token passed as an argument came straight back to the model (#112 7a).",
+    "file": "src/mcp/server.ts",
+    "find": "  content: [{ type: 'text', text: redactCredentials(publicErrorMessage(e)) }],\n",
+    "replace": "  content: [{ type: 'text', text: publicErrorMessage(e) }],\n",
+    "test": "src/mcp/credential-echo.test.ts",
+    "expect": "through every registered tool, in three passes",
+    "devOnly": false
+  },
+  {
+    "id": "plans/unknown-plan-refusal-is-recorded",
+    "why": "require() sat outside every caller's try, so five tools refused an unknown plan id with an audit delta of zero (#112 7b).",
+    "file": "src/plans/index.ts",
+    "find": "      this.auditRefusal(planId, NO_PORTAL_KEY, 'lookup', cause)\n",
+    "replace": "",
+    "test": "src/mcp/credential-echo.test.ts",
+    "expect": "validate_plan on an unknown plan id is recorded",
+    "devOnly": false
+  },
+  {
+    "id": "guard-register/a-mutant-cannot-forge-a-result",
+    "why": "A mutant throwing Error(\"Tests 1 failed\") during import was counted as proof with zero tests executed, because the text appeared where the parser looked (#124).",
+    "file": "scripts/guard-register.mjs",
+    "find": "    if (mutated.executed === 0) {\n",
+    "replace": "    if (false) {\n",
+    "test": "src/guard-register.test.ts",
+    "expect": "refuses a mutant that throws text shaped like a summary during import",
+    "devOnly": false
+  },
+  {
+    "id": "docs-links/a-broken-link-fails-the-run",
+    "why": "A link checker that only ever sees resolving links is indistinguishable from one that reports nothing (#117).",
+    "file": "scripts/docs-links.mjs",
+    "find": "if (problems.length > 0) {\n",
+    "replace": "if (false) {\n",
+    "test": "src/docs-links.test.ts",
+    "expect": "catches a link to a file that does not exist",
+    "devOnly": false
+  },
+  {
+    "id": "idiom-check/read-failure-is-not-clean",
+    "why": "The scan's rc=2 was masked by the filters' status, so an unreadable file passed as clean. Defect B of #126, independent of enumeration.",
+    "file": "scripts/idiom-check.sh",
+    "find": "    raw=\"$(grep -nE \"$ere\" -- \"$f\")\" || grc=$?\n",
+    "replace": "    raw=\"$(grep -nE \"$ere\" -- \"$f\" 2>/dev/null)\" || true\n",
+    "test": "src/idiom-check.test.ts",
+    "expect": "B: fails closed on the SAME violation when the file cannot be READ",
+    "devOnly": false
+  },
+  {
+    "id": "idiom-check/enumeration-is-nul-safe",
+    "why": "Without -z, git QUOTES a newline filename and the quoted form is not a path, so the file was skipped silently. Defect A of #126, independent of reading.",
+    "file": "scripts/idiom-check.sh",
+    "find": "  enum_to \"$files\" git ls-files -z --cached --others --exclude-standard -- $globs || exit 1\n",
+    "replace": "  enum_to \"$files\" git ls-files --cached --others --exclude-standard -- $globs || exit 1\n",
+    "test": "src/idiom-check.test.ts",
+    "expect": "A: a newline filename with no violation does not fail the run",
+    "devOnly": false
+  },
+  {
+    "id": "redaction/proto-key-is-not-dropped",
+    "why": "`out[\"__proto__\"] = v` on a plain object sets the PROTOTYPE, so the entry vanished from an append-only trail with no error (#112, RT-06 class).",
+    "file": "src/config/credential-shape.ts",
+    "find": "    const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>\n",
+    "replace": "    const out: Record<string, unknown> = {}\n",
+    "test": "src/mcp/credential-echo.test.ts",
+    "expect": "keeps a __proto__ key instead of setting a prototype and dropping it",
+    "devOnly": false
+  },
+  {
+    "id": "redaction/colliding-redacted-keys-keep-both-values",
+    "why": "Two different credential-shaped keys redact to the same placeholder, and the second overwrote the first (#112).",
+    "file": "src/config/credential-shape.ts",
+    "find": "      if (key in out) {\n",
+    "replace": "      if (false) {\n",
+    "test": "src/mcp/credential-echo.test.ts",
+    "expect": "keeps both values when two different credential-shaped keys collide",
+    "devOnly": false
+  },
+  {
+    "id": "redaction/pem-block-consumed-whole",
+    "why": "SECRECY. Matching only the header label replaced the header and LEFT THE BASE64 BODY, so the record read as redacted while a disposable key was recovered from a reloaded trail (#123 3a).",
+    "file": "src/config/credential-shape.ts",
+    "find": "const PEM_BLOCK =\n  `(?:-----)?${PEM_HEADER}` + `(?:[\\\\s\\\\S]*?END [A-Z ]*PRIVATE KEY(?:-----)?|[\\\\s\\\\S]*)`\n",
+    "replace": "const PEM_BLOCK = PEM_HEADER\n",
+    "test": "src/mcp/credential-echo.test.ts",
+    "expect": "SECRECY: a PEM body is unrecoverable",
+    "devOnly": false
+  },
+  {
+    "id": "redaction/collision-numbered-whatever-its-origin",
+    "why": "PRESERVATION. Numbering only when the key CHANGED let a key that is literally the placeholder overwrite a redacted one, so a value vanished from an append-only trail (#123 3b).",
+    "file": "src/config/credential-shape.ts",
+    "find": "      if (key in out) {\n",
+    "replace": "      if (key !== k && key in out) {\n",
+    "test": "src/mcp/credential-echo.test.ts",
+    "expect": "PRESERVATION: a key equal to the placeholder overwrites nothing",
+    "devOnly": false
+  },
+  {
+    "id": "mcp/result-redacted-before-serializing",
+    "why": "STRUCTURAL VALIDITY. Redacting the SERIALIZED JSON minted duplicate keys: a parser keeps the last, so the caller silently lost a property while the stored plan retained both (#123 3b).",
+    "file": "src/mcp/server.ts",
+    "find": "    { type: 'text', text: redactCredentials(JSON.stringify(redactCredentialsDeep(data), null, 2)) },\n",
+    "replace": "    { type: 'text', text: redactCredentials(JSON.stringify(data, null, 2)) },\n",
+    "test": "src/mcp/credential-echo.test.ts",
+    "expect": "STRUCTURAL VALIDITY: a tool result parses with no duplicate key",
+    "devOnly": false
+  },
+  {
+    "id": "redaction/collision-numbering-is-injective",
+    "why": "COLLISION SAFETY. A FIXED suffix disambiguates only the second collision, so a third key that redacts alike lands on the same placeholder and one value is lost (#123).",
+    "file": "src/config/credential-shape.ts",
+    "find": "        let n = 2\n        while (`${key} #${n}` in out) n += 1\n        key = `${key} #${n}`\n",
+    "replace": "        key = `${key} #2`\n",
+    "test": "src/mcp/credential-echo.test.ts",
+    "expect": "COLLISION SAFETY: three keys that redact alike stay three distinct keys",
+    "devOnly": false
+  },
+  {
+    "id": "redaction/walks-only-plain-objects",
+    "why": "Rebuilding an arbitrary object from Object.entries destroys it: a Date became {} once the walker was applied to every tool result (#123).",
+    "file": "src/config/credential-shape.ts",
+    "find": "  if (isPlainObject(value)) {\n",
+    "replace": "  if (value !== null && typeof value === 'object') {\n",
+    "test": "src/mcp/credential-echo.test.ts",
+    "expect": "leaves a Date intact, so it still serializes as an ISO string",
+    "devOnly": false
+  },
+  {
+    "id": "guard-register/refusal-ratchet-detects-change",
+    "why": "A registry cannot report what is missing from it, so the denominator comes from the code: a new refusal site must not appear silently (#124).",
+    "file": "scripts/guard-register.mjs",
+    "find": "    if (actual !== expected) {\n",
+    "replace": "    if (false) {\n",
+    "test": "src/guard-register.test.ts",
+    "expect": "reports a GAINED refusal site",
+    "devOnly": false
+  },
+  {
+    "id": "guard-register/a-run-that-proves-nothing-is-not-a-pass",
+    "why": "The floor compared exercised against entries whose FILE IS PRESENT, so a registry of only dev-only absent entries satisfied 0 < 0 and exited 0 reporting zero guards proven (#130).",
+    "file": "scripts/guard-register.mjs",
+    "find": "  if (exercised === 0 && failures.length === 0) {\n",
+    "replace": "  if (false) {\n",
+    "test": "src/guard-register.test.ts",
+    "expect": "a registry of only skipped entries proves nothing and fails",
+    "devOnly": false
+  },
+  {
+    "id": "idiom-check/refusal-grammar-is-enforced",
+    "why": "The inventory cannot see `exit $rc`, so a refusal written that way escapes the count and the claim it supports becomes false (#124).",
+    "file": "scripts/idiom-check.sh",
+    "find": "  'exit[[:space:]]+\"?\\$' \\\n",
+    "replace": "  'THIS_PATTERN_MATCHES_NOTHING' \\\n",
+    "test": "src/idiom-check.test.ts",
+    "expect": "refusal-outside-the-grammar is caught in scripts/bad.sh",
+    "devOnly": false
+  },
+  {
+    "id": "ref-scan/exemption-matches-a-whole-path",
+    "why": "A PREFIX comparison is what the old truncation amounted to: `src/source-guard.test.ts:PORTAL_A` begins with the exempt `src/source-guard.test.ts`, so it inherited another file's exemption and shipped carrying a private reference. The comment on that line claimed a colon in a path \"could not match an exemption, which fails closed\"; it failed OPEN (#125).",
+    "file": "scripts/ref-scan.sh",
+    "find": "  for e in ${REF_EXEMPT[@]+\"${REF_EXEMPT[@]}\"}; do [ \"$p\" = \"$e\" ] && return 0; done\n",
+    "replace": "  for e in ${REF_EXEMPT[@]+\"${REF_EXEMPT[@]}\"}; do case \"$p\" in \"$e\"*) return 0 ;; esac; done\n",
+    "test": "src/ref-scan.test.ts",
+    "expect": "does not let a colon in a filename inherit",
+    "devOnly": true
+  },
+  {
+    "id": "command-paths/an-absent-script-fails-the-run",
+    "why": "With the existence branch gone, a shipped command naming a file the tree does not hold reads as clean, which is the state the public repo was in for months (#121).",
+    "file": "scripts/command-paths.mjs",
+    "find": "  if (!existsSync(path)) {\n    problems.push(`${source}: runs ${path}, which is not in this tree`)\n    continue\n  }\n  if (!statSync(path).isFile()) {\n",
+    "replace": "  if (existsSync(path) && !statSync(path).isFile()) {\n",
+    "test": "src/command-paths.test.ts",
+    "expect": "catches a workflow step that runs a script the tree does not hold",
+    "devOnly": false
+  },
+  {
+    "id": "build-mcpb/archive-allowlist-is-not-a-whole-directory",
+    "why": "`dist/*` allowlists anything copied under dist/, and a private tree one level down inside an allowlisted directory is precisely what the old name blocklist could not see: `[ -e \"$STAGE/the private tree\" ]` missed dist/internal/notes.md and it shipped, from a list that NAMES the private tree (#120). Only the file type tells the compiled output from a document, and tsconfig.build.json emits no .d.ts and no .map, so .js is the whole of it.",
+    "file": "scripts/build-mcpb.sh",
+    "find": "  'dist/*.js'\n",
+    "replace": "  'dist/*'\n",
+    "test": "src/build-mcpb.test.ts",
+    "expect": "refuses a private tree nested inside dist",
+    "devOnly": false
+  },
+  {
+    "id": "version-check/the-manifest-must-match-the-package",
+    "why": "package.json and manifest.json are deliberately the same since 0.1.4, and the agreement was enforced only by a human reading a private QA document (#129).",
+    "file": "scripts/version-check.mjs",
+    "find": "if (manifest !== pkg) {\n",
+    "replace": "if (false) {\n",
+    "test": "src/version-check.test.ts",
+    "expect": "refuses when the manifest and the package disagree",
+    "devOnly": false
+  },
+  {
+    "id": "tokens/two-names-for-one-vault-is-refused",
+    "why": "The config and the environment can each name the vault. Ranking them means one silently overrides the other for a credential store, so a disagreement is refused rather than resolved by whichever check runs first (#145). Anchor moved when the resolution was extracted into resolveVaultPath so the vault CLI could share it.",
+    "file": "src/index.ts",
+    "find": "  if (fromEnv !== undefined && fromConfig !== undefined && fromEnv !== fromConfig) {\n",
+    "replace": "  if (false) {\n",
+    "test": "src/index.test.ts",
+    "expect": "refuses when the config and the environment name different vaults",
+    "devOnly": false
+  },
+  {
+    "id": "vault-cli/writes-where-the-config-says",
+    "why": "The vault CLI resolved the vault on its own, so `vault add` wrote to the default while the server read the config's vaultFile: a token added to a vault nothing reads, reported as success (#145).",
+    "file": "src/index.ts",
+    "find": "  const vaultPath = resolveVaultPath(vaultConfigFile, vaultConfigDir)\n",
+    "replace": "  const vaultPath = resolveVaultPath(undefined, undefined)\n",
+    "test": "src/vault-cli.test.ts",
+    "expect": "writes to the vault the config names, not to the default",
+    "devOnly": false
+  },
+  {
+    "id": "redaction/the-server-records-what-it-redacted",
+    "why": "The marker is not credential-shaped, so a caller can type it and a stored refusal reason reads as a redaction that never happened. The handles are the out-of-band fact (#147).",
+    "file": "src/config/credential-shape.ts",
+    "find": "  return { value: redacted, handles: [...seen].sort() }\n",
+    "replace": "  return { value: redacted, handles: [] }\n",
+    "test": "src/mcp/credential-echo.test.ts",
+    "expect": "records a handle when it redacts something",
+    "devOnly": false
+  },
+  {
+    "id": "redaction/a-caller-cannot-forge-the-redaction-field",
+    "why": "Assigning `redacted` after the caller's fields are spread is what makes a supplied value unable to survive; a spread that kept the caller's key would let the log assert a redaction the server never made (#147).",
+    "file": "src/audit/index.ts",
+    "find": "  const out: AuditEvent = { ...value, ...own, redacted: handles }\n",
+    "replace": "  const out: AuditEvent = { redacted: handles, ...value, ...own }\n",
+    "test": "src/mcp/credential-echo.test.ts",
+    "expect": "overwrites a forged field rather than merging with it",
+    "devOnly": false
+  }
+]

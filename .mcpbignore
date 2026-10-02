@@ -1,0 +1,39 @@
+# Trim dependency bloat from the .mcpb bundle. These are dependency internals
+# that are never used at runtime — node executes the compiled .js, never .ts —
+# so stripping them keeps the bundle lean without touching what actually runs.
+node_modules/**/*.ts
+node_modules/**/*.map
+node_modules/**/*.md
+# ... EXCEPT a dependency's licence. `node_modules/**/*.md` took LICENSE.md with the
+# READMEs and the changelogs, and the .mcpb redistributes those packages verbatim to
+# every user who installs the extension. MIT and BSD both require the notice to
+# accompany copies, and five packages were shipping without one: express-rate-limit,
+# jose, json-schema-typed, ms and qs (#141).
+#
+# The broad rule is KEPT and negated rather than narrowed to README.md and CHANGELOG.md,
+# which was measured rather than preferred. Of 801.9 kB of markdown in the production
+# tree, only 7.5 kB is licence text; naming README.md and CHANGELOG.md leaves 182.0 kB
+# behind in Readme.md, readme.md, changelog.md, HISTORY.md, History.md and Porting-
+# Buffer.md, because those two names are not how every package spells them.
+#
+# Character classes rather than repeated spellings: LICENSE, LICENCE, license and
+# License all occur in the wild, the matcher is case-sensitive, and `LICENSE-MIT.md` is
+# a real filename. Each ends in `.md` so it re-includes only what the rule above
+# removed. This is .gitignore syntax read by the `ignore` package, which mcpb calls as
+# `ignore().add(EXCLUDE_PATTERNS).add(mcpbignore)`; negation and classes were TESTED
+# against that same library and then against a rebuilt bundle, not assumed. Order
+# matters: a negation only undoes a rule stated before it.
+!node_modules/**/[Ll][Ii][Cc][Ee][Nn][CcSs][Ee]*.md
+!node_modules/**/[Cc][Oo][Pp][Yy][Ii][Nn][Gg]*.md
+!node_modules/**/[Nn][Oo][Tt][Ii][Cc][Ee]*.md
+node_modules/**/tests
+node_modules/**/test
+node_modules/**/__tests__
+node_modules/**/*.test.js
+node_modules/**/benchmarks
+node_modules/**/.github
+node_modules/**/examples
+
+# The staging marker that permits this tool to remove build/mcpb again (#104).
+# It lives on disk between runs and must not ship inside the bundle.
+.manyportals-staging

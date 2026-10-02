@@ -1,0 +1,87 @@
+{
+  "name": "@hohguy/manyportals-mcp",
+  "version": "0.1.8",
+  "private": true,
+  "description": "One AI assistant. Many HubSpot portals. Every write names its portal. A self-hosted multi-portal MCP server for HubSpot.",
+  "license": "MIT",
+  "author": "hohguy",
+  "homepage": "https://github.com/hohguy/manyportals-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hohguy/manyportals-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hohguy/manyportals-mcp/issues"
+  },
+  "keywords": [
+    "hubspot",
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "ai",
+    "crm",
+    "multi-portal",
+    "revops",
+    "self-hosted",
+    "portals"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "manyportals-mcp": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "docs/USAGE.md",
+    "docs/GO-LIVE.md",
+    "docs/SAFETY.md",
+    "docs/SUPPORT.md",
+    "examples",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "NOTICE"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc -p tsconfig.build.json && node -e \"require('fs').chmodSync('dist/index.js', 0o755)\"",
+    "build:mcpb": "bash scripts/build-mcpb.sh",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "provenance:check": "node -e \"const l=require('fs').readFileSync('package-lock.json','utf8'); if(/instrumentation-mcp|@shinzolabs/i.test(l)){console.error('provenance: a telemetry/instrumentation dependency is present in package-lock.json'); process.exit(1)} else console.log('provenance: no telemetry/instrumentation dependency in lockfile')\"",
+    "credscan:check": "bash scripts/credscan.sh",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "verify": "npm run provenance:check && npm run credscan:check && npm run perm:check && npm run prose:check && npm run idiom:check && npm run links:check && npm run version:check && npm run commands:check && npm run lint && npm run format:check && npm run typecheck && npm test && npm run guards:check && npm run build",
+    "prepublishOnly": "bash scripts/prepublish-guard.sh",
+    "prose:check": "bash scripts/prose-check.sh",
+    "idiom:check": "bash scripts/idiom-check.sh",
+    "links:check": "node scripts/docs-links.mjs",
+    "version:check": "node scripts/version-check.mjs",
+    "commands:check": "node scripts/command-paths.mjs",
+    "perm:check": "bash scripts/perm-check.sh",
+    "guards:check": "node scripts/guard-register.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.0.1",
+    "eslint": "^10.6.0",
+    "prettier": "^3.8.5",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.62.0",
+    "vitest": "^4.1.9"
+  }
+}

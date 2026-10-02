@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # So the cross-platform legs can be run deliberately before cutting a release.
+  workflow_dispatch:
+  schedule:
+    # Monday 06:00 UTC. The Windows and macOS legs are billed at 2x and 10x, so they
+    # run on a cadence and on demand rather than on every push.
+    - cron: '0 6 * * 1'
+
+# A newer push supersedes an older run instead of both finishing. Chasing one
+# platform failure across four pushes ran the full matrix four times to completion,
+# which is most of a day's budget for information nobody read.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        # 24 = Active LTS, 26 = Current (the dev runtime); 22 = oldest still-maintained
+        # LTS floor. 20 dropped (active support ended 2026-04; Maintenance-only).
+        node: [22, 24, 26]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      # Run the SAME command an operator runs, rather than listing its steps here. The
+      # hand-expanded list drifted: prose:check and links:check were added to verify and
+      # never added here, so broken public links and prohibited release prose could merge
+      # green under a comment claiming this mirrored verify (found by review 2026-09-27).
+      #
+      # verify covers, in order: the supply-chain gate on the lockfile, the credential leak
+      # scan over shipped surfaces, the published-prose rules, the documentation link and
+      # anchor check, the check that every command here and in package.json names a file
+      # this tree actually holds, lint, formatting, types, tests, and the build.
+      - run: npm run verify
+
+  # THE SECOND TREE is covered by a job in a different workflow, which is not part of the
+  # published repository and so is not visible here. Every job in THIS file runs the
+  # product, and every command in it is `npm` or `node`: a job here may only name a file
+  # that this repository holds, because this file is published as-is and its steps then
+  # run against the published tree. One did not, and exited 127 on every push to the
+  # public repository until #121; `npm run verify` above now includes the check that
+  # would have caught it.
+
+  # Windows and macOS, billed at 2x and 10x. ManyPortals must run on both, so this is
+  # not optional coverage; it is coverage on a cadence instead of on every push. It
+  # runs on a pull request, on the weekly schedule, and on demand, which is what to use
+  # before cutting a release.
+  #
+  # The trade is stated rather than assumed: a platform regression pushed straight to
+  # main is not caught until one of those three happens. That is acceptable while the
+  # product's platform-specific surface is small and its POSIX-only parts are already
+  # scoped and named (#96); it would not be acceptable if that surface grew.
+  cross-platform:
+    if: github.event_name != 'push'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            node: 24
+          - os: macos-latest
+            node: 24
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run verify

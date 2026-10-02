@@ -1,0 +1,55 @@
+{
+  "manifest_version": "0.3",
+  "name": "manyportals-mcp",
+  "display_name": "ManyPortals",
+  "version": "0.1.8",
+  "description": "One AI assistant. Many HubSpot portals. Every write names its portal.",
+  "long_description": "Work with one or more HubSpot portals without their data crossing. Requests go directly to HubSpot's API, with no intermediary service and no tracking of its own. The checks cover routing and record IDs, not the text inside records. Read the safety model before you connect a portal whose content you do not control.",
+  "author": {
+    "name": "hohguy",
+    "url": "https://github.com/hohguy"
+  },
+  "homepage": "https://github.com/hohguy/manyportals-mcp",
+  "documentation": "https://github.com/hohguy/manyportals-mcp#readme",
+  "support": "https://github.com/hohguy/manyportals-mcp/issues",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hohguy/manyportals-mcp"
+  },
+  "license": "MIT",
+  "keywords": ["hubspot", "mcp", "multi-portal", "crm", "revops", "self-hosted"],
+  "server": {
+    "type": "node",
+    "entry_point": "dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/index.js"],
+      "env": {
+        "MANYPORTALS_CONFIG": "${user_config.config_path}",
+        "MANYPORTALS_VAULT_KEY": "${user_config.vault_key}",
+        "MANYPORTALS_VAULT_FILE": "${user_config.vault_path}"
+      }
+    }
+  },
+  "user_config": {
+    "config_path": {
+      "type": "file",
+      "title": "Portal config file",
+      "description": "Full path to your config file, which holds per-portal settings and no secrets. A relative path is refused.",
+      "required": true
+    },
+    "vault_key": {
+      "type": "string",
+      "title": "Vault passphrase",
+      "description": "Required if your tokens are in an encrypted vault (the server will not start without it). Leave empty only if your tokens are in a plain token file.",
+      "sensitive": true,
+      "required": false
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=22.0.0"
+    }
+  }
+}

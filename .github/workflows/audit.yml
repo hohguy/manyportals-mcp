@@ -1,0 +1,27 @@
+name: Audit
+
+# Scheduled supply-chain alarm: fails when a HIGH or CRITICAL advisory affects a
+# production dependency (the tree that ships in the npm package and the .mcpb).
+# Push/PR CI cannot catch this while the repo is idle — advisories are published
+# upstream with no commit here. Local mirror: `npm run audit:prod` (same command).
+# Deliberately NOT part of `npm run verify`: it reads the live advisory database,
+# so a new upstream advisory would otherwise fail unrelated commits.
+on:
+  schedule:
+    - cron: '17 13 * * 1' # weekly, Monday 13:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run audit:prod

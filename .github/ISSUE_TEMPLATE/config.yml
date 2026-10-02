@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or idea
+    url: https://github.com/hohguy/manyportals-mcp/discussions
+    about: Ask in Discussions. Issues are for bugs and tracked work.
+  - name: Report a security problem
+    url: https://github.com/hohguy/manyportals-mcp/security/advisories/new
+    about: Report privately through GitHub, never as a public issue. See SECURITY.md.

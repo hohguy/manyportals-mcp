@@ -1,0 +1,11 @@
+{
+  "//": "Production build: app code only — excludes tests and emits no .d.ts/.map.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "sourceMap": false,
+    "declaration": false,
+    "declarationMap": false,
+    "removeComments": true
+  },
+  "exclude": ["dist", "node_modules", "**/*.test.ts", "**/fake.ts"]
+}

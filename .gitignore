@@ -1,0 +1,28 @@
+# Dependencies and build output
+node_modules/
+dist/
+build/
+coverage/
+
+# Bundle artifact
+*.mcpb
+
+# Local environment and secrets — never commit.
+# This mirrors the private development repository's ignore list. An unfamiliar
+# contributor is more likely to need these here, not less (#66).
+.env
+.env.*
+secrets/
+private/
+config/credentials.json
+*.key
+*.pem
+# Operator files, if someone keeps one beside a checkout. The sample configs under
+# examples/ are named *.example.json and are unaffected.
+tokens.json
+manyportals.config.json
+*.vault
+
+# Logs and OS noise
+*.log
+.DS_Store

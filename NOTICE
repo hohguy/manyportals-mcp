@@ -1,0 +1,14 @@
+ManyPortals MCP
+Copyright (c) 2026 hohguy
+
+This product is based in part on shinzo-labs/hubspot-mcp
+(https://github.com/shinzo-labs/hubspot-mcp), licensed under the MIT License,
+Copyright (c) 2025 Shinzo Labs.
+
+Provenance: only specific HubSpot REST request patterns were harvested (from the
+shinzo-labs/hubspot-mcp v2.0.5 line) and adapted; functions adapted from it retain
+an attribution note at their definition. The MCP tool registrations, single-file
+server structure, telemetry/instrumentation, and HTTP listener of the original are
+NOT used and are NOT dependencies here. That absence is mechanically enforced by
+`npm run provenance:check` (also run in CI), which fails if any telemetry/
+instrumentation package appears in package-lock.json.
