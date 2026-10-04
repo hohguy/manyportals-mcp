@@ -46,9 +46,40 @@ your client asks you before the steps marked destructive.
 - **Other software on your own computer.** Any program running as your user can read the same files this server reads.
 - **HubSpot itself.** Report those problems to HubSpot.
 
+## Verifying a release
+
+Releases are signed, and you can check that without relying on the badge GitHub shows.
+
+Commits and tags are signed with an SSH key. The keys this project accepts are listed in
+[`.github/allowed_signers`](.github/allowed_signers). From a clone of this repository:
+
+```sh
+git config gpg.ssh.allowedSignersFile .github/allowed_signers
+git verify-tag v0.1.9
+```
+
+Run it from the repository root, because that path is relative.
+
+The bundle attached to a release is a separate check. Its sha256 is published in the release
+notes, so compare it against the file you downloaded:
+
+```sh
+shasum -a 256 manyportals-mcp.mcpb
+```
+
+The checksum tells you the file reached you unaltered. It cannot be re-derived from source,
+because the packer writes timestamps into the archive and offers no reproducible mode, so two
+builds of one commit differ. To check the contents instead, build from the tag and compare the
+extracted `dist/` and `manifest.json` against your own build.
+
+**If a signing key is ever compromised,** the key is added to a revocation list rather than
+removed from `allowed_signers`. Removing it would make honest history unverifiable alongside
+anything forged, which destroys the record instead of correcting it. A revocation is announced in
+the release notes and in a GitHub advisory.
+
 ## Known security limitations
 
-These are documented rather than fixed, as of 0.1.8.
+These are documented rather than fixed, as of 0.1.9.
 
 - **The vault passphrase is visible in Claude Desktop.** If you install the extension and use the encrypted vault, Claude Desktop holds the passphrase as an environment variable and shows it in plain text on its own Local MCP servers screen. Do not share or screenshot that screen. Also described in [USAGE](docs/USAGE.md).
 - **Changing the vault passphrase means re-entering each token.** There is no command that re-keys a vault in place.

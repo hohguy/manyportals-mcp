@@ -605,6 +605,8 @@ export async function startServer(deps: StartDeps): Promise<{
   registry: PortalRegistry
   plans: PlanService
   audit: AuditSink & AuditQuery
+  /** Returned so the real entry can close it on a signal (#157). Tests ignore it. */
+  close: () => Promise<void>
 }> {
   const registry = new PortalRegistry(deps.config)
   const idIndex = deps.idIndex ?? new PortalIdIndex()
@@ -651,7 +653,61 @@ export async function startServer(deps: StartDeps): Promise<{
 
   const server = createMcpServer({ registry, plans, reads, audit, version })
   await server.connect(deps.transport ?? new StdioServerTransport())
-  return { registry, plans, audit }
+  return { registry, plans, audit, close: () => server.close() }
+}
+
+/**
+ * Close on SIGTERM/SIGINT instead of dying by the default disposition (#157).
+ *
+ * MEASURED first, because the ticket's premise was wrong: this server already exits
+ * code=0 when stdin closes, which is the path Claude Desktop uses, so stdin needs
+ * nothing here. On a signal it was killed outright: `code=null signal=SIGTERM`.
+ *
+ * What that costs is small and specific. A supervisor, and Docker especially, records
+ * the container as KILLED rather than stopped, and shutdown had no reporting surface
+ * at all, which is the far end of #144 (a startup failure reports only "Server
+ * disconnected"). The lifecycle was silent at both ends.
+ *
+ * NOT a durability fix, and must not be sold as one. An abrupt kill is already a
+ * modelled case: SAFETY.md states that an `attempt` line with no `execute` or `fail`
+ * after it means "check HubSpot", and that contract is unchanged.
+ *
+ * The timeout is the point of the whole thing. A close that hangs must not leave a
+ * process holding portal tokens and a vault passphrase alive forever while LOOKING
+ * like it shut down, which would be worse than being killed.
+ */
+export function installShutdown(
+  close: () => Promise<void>,
+  exit: (code: number) => void = (c) => process.exit(c),
+  write: (s: string) => void = (s) => void process.stderr.write(s),
+  timeoutMs = 2000,
+): void {
+  let closing = false
+  const shutdown = (why: string): void => {
+    if (closing) return // a second signal must not start a second close
+    closing = true
+    const forced = setTimeout(() => {
+      write(`manyportals-mcp: ${why} received, close did not finish in ${timeoutMs}ms; exiting\n`)
+      exit(1)
+    }, timeoutMs)
+    // unref so this timer alone cannot hold the process open if close resolves first
+    if (typeof forced.unref === 'function') forced.unref()
+    void close()
+      .then(() => {
+        clearTimeout(forced)
+        write(`manyportals-mcp: ${why} received, shut down cleanly\n`)
+        exit(0)
+      })
+      .catch(() => {
+        clearTimeout(forced)
+        // The reason is deliberately not printed: a close failure can carry a path or
+        // a response body, and this message reaches the operator's logs unsanitized.
+        write(`manyportals-mcp: ${why} received, close failed; exiting\n`)
+        exit(1)
+      })
+  }
+  process.once('SIGTERM', () => shutdown('SIGTERM'))
+  process.once('SIGINT', () => shutdown('SIGINT'))
 }
 
 /** Real entry: assemble production deps (file config, env tokens, HTTP client, stdio). */
@@ -674,7 +730,7 @@ export async function main(): Promise<void> {
   // several can share one data folder. The legacy single-writer `audit.jsonl`
   // stays readable history and is never appended to again.
   const writerId = newWriterId()
-  await startServer({
+  const started = await startServer({
     config,
     client: new HttpHubSpotClient(),
     resolveToken,
@@ -689,6 +745,9 @@ export async function main(): Promise<void> {
     ),
     warn,
   })
+  // Installed HERE and not in startServer: process-level handlers in a function the
+  // tests call hundreds of times would leak across them.
+  installShutdown(started.close)
 }
 
 /**

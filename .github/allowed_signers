@@ -1,0 +1,32 @@
+# allowed_signers — the keys permitted to sign this project's commits and tags.
+#
+# WHAT THIS IS FOR. `git verify-commit` and `git verify-tag` need to be told which keys
+# to accept. GitHub's "Verified" badge uses keys registered on the maintainer's GitHub
+# account, which is a DIFFERENT source; this file is what lets you verify without
+# trusting that badge. Two independent paths, deliberately.
+#
+# HOW TO USE IT, from a clone of this repository:
+#
+#     git config gpg.ssh.allowedSignersFile .github/allowed_signers
+#     git verify-tag v0.1.9
+#
+# The path is relative, so run it from the repository root.
+#
+# APPEND, NEVER REMOVE. A key leaving this file makes every past signature it made
+# unverifiable. Retired keys stay listed precisely so history keeps verifying. Losing a
+# private key costs you the ability to make NEW signatures with it and nothing else.
+#
+# ONE KEY PER MACHINE is the convention here, rather than one key copied around. Each
+# machine's key never leaves it, a compromised machine revokes one line instead of the
+# whole identity, and this file is multi-key by design. Adding a machine is one line.
+#
+# IF A KEY IS COMPROMISED, as opposed to lost, removing it from this file is NOT the
+# fix: it would silently invalidate honest history alongside the forged commits. Use an
+# `ssh-keygen -k` revocation list with `gpg.ssh.revocationFile`, which marks the key as
+# revoked while leaving the record of what it signed intact. See SECURITY.md.
+#
+# `namespaces="git"` restricts each key to git signing, so a key accepted here cannot be
+# used to verify signatures made for some other purpose.
+
+# macOS, held in 1Password (no private key on disk)
+12961495+hohguy@users.noreply.github.com namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEZtOqEIRo/osjuVb1vvpMZbstVIVidtLemigkQiDx1t

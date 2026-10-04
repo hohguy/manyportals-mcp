@@ -47,8 +47,8 @@ else
   # Every document the allowlist ships. CONTRIBUTING.md and the issue templates were
   # missing here, so the rules could not be enforced in the one repo whose CI is
   # meant to enforce them (#68).
-  set -- 'README.md' 'SECURITY.md' 'CONTRIBUTING.md' 'docs/*.md' 'examples/*.md' \
-         '.github/ISSUE_TEMPLATE/*.md'
+  set -- 'README.md' 'SECURITY.md' 'CONTRIBUTING.md' 'CODE_OF_CONDUCT.md' \
+         'CHANGELOG.md' 'docs/*.md' 'examples/*.md' '.github/ISSUE_TEMPLATE/*.md'
 fi
 
 # Read into an ARRAY over NUL. The list used to be a plain string expanded unquoted,

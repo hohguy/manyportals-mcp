@@ -568,5 +568,25 @@
     "test": "src/mcp/credential-echo.test.ts",
     "expect": "overwrites a forged field rather than merging with it",
     "devOnly": false
+  },
+  {
+    "id": "publish-sync/base-history-must-refuse-private",
+    "why": "A mis-targeted fetch would make the PRIVATE history the parent of a public commit; the public name was once a rename redirect to the dev repo (G5b).",
+    "file": "scripts/publish-sync.sh",
+    "find": "      if [ \"$found\" -eq 1 ]; then\n",
+    "replace": "      if false; then\n",
+    "test": "src/publish-sync.test.ts",
+    "expect": "refuses a history containing",
+    "devOnly": true
+  },
+  {
+    "id": "release-gate/a-mistyped-version-must-not-pass",
+    "why": "A mistyped version queries a label nobody uses, returns nothing, and reads as an empty wave while every issue in the real wave is still open.",
+    "file": "scripts/release-gate.sh",
+    "find": "if ! grep -qxF -- \"$LABEL\" <<< \"$LABELS\"; then\n",
+    "replace": "if false; then\n",
+    "test": "src/release-gate.test.ts",
+    "expect": "refuses a mistyped version rather than reporting an empty wave clean",
+    "devOnly": true
   }
 ]

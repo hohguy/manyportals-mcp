@@ -27,7 +27,12 @@ FILLER='it is worth noting|worth noting that|needless to say|at the end of the d
 # phrase list cannot see position. Banning the sentence would be wrong, since SAFETY.md
 # states it legitimately under "What it protects". Both were found by the operator
 # reading the page, which is still the only check for that half.
-OVERCLAIM='routes every (action|operation|call|read)|every (action|operation|call|read) is routed|every (action|operation|call|read) names its portal|all (actions|operations|reads) are routed'
+#
+# The verb list grew once already. The first draft matched only "routes", and the v0.1.8
+# release notes then turned up "sends every action to the portal you name" in their
+# opening line. A pattern written from one instance knows one phrasing, so the fix is a
+# verb alternation rather than a longer list of whole sentences.
+OVERCLAIM='(routes|sends|directs) every (action|operation|call|read)|every (action|operation|call|read) (is|are) (routed|sent)|every (action|operation|call|read) names its portal|all (actions|operations|reads) are routed'
 
 # Dates in published prose are ISO 8601 (2026-09-28). A long-form month with a day or a
 # year beside it is rejected: "28 September 2026" and "September 28, 2026" read as

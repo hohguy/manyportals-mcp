@@ -53,7 +53,7 @@ chmod 600 ~/.manyportals/tokens.json
 
 ### Other ways to run it
 
-- **From source, any MCP client:** clone, `npm ci && npm run build`, point the client at `dist/index.js`. See [USAGE](docs/USAGE.md#connect-it-to-claude). `npm ci` installs exactly the locked dependency set, so your tree matches the one that was tested. Every release is tagged `vX.Y.Z`, and `main` is always the latest release, so cloning `main` gives you a released version rather than work in progress.
+- **From source, any MCP client:** clone, `npm ci && npm run build`, point the client at `dist/index.js`. See [USAGE](docs/USAGE.md#connect-it-to-claude). `npm ci` installs exactly the locked dependency set, so your tree matches the one that was tested. Every release is tagged `vX.Y.Z`. `main` carries the latest release plus any documentation fixes made since it, so check out the release tag if you need exactly what a release shipped.
 - **Claude Code:** build from source, then `claude mcp add`. Same section of USAGE.
 
 ## The tools

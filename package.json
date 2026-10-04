@@ -1,6 +1,6 @@
 {
   "name": "@hohguy/manyportals-mcp",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": true,
   "description": "One AI assistant. Many HubSpot portals. Every write names its portal. A self-hosted multi-portal MCP server for HubSpot.",
   "license": "MIT",

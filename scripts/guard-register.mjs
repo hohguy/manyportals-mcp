@@ -174,6 +174,7 @@ export function readReport(report, spawnFailed) {
 const NOT_A_GATE = {
   'scripts/cred-pattern.sh': 'sets one variable; sourced, never executed',
   'scripts/prose-pattern.sh': 'sets three variables; sourced, never executed',
+  'scripts/deny-pattern.sh': 'sets one variable; sourced, never executed',
   'scripts/guard-register.mjs':
     'this runner; its own failure modes are covered by src/guard-register.test.ts',
   'scripts/publish-sync.sh':
@@ -285,6 +286,17 @@ const REFUSAL_BASELINE = {
   'scripts/layout.sh': 2,
   'scripts/out-guard.sh': 7,
   'scripts/perm-check.sh': 11,
+  // NEW at 0.1.9 (#162). Eight sites: no version (1), --anyway with no reason (1), an
+  // unknown argument (1), the label query failing (1), the label not existing (1), the
+  // issue query failing (1), the wave not being clear (1), and the override path's own
+  // exit (1). Counted with refusalSites.
+  //
+  // REGISTERED: release-gate/a-mistyped-version-must-not-pass. Of the eight, that is
+  // the one whose failure is SILENT: a typo queries a label nobody uses, gets nothing
+  // back, and without the existence check reads as "nothing open" while the real wave
+  // is untouched. The query-failure pair are the #108 class and are tested too, but the
+  // typo is the one that would have shipped unnoticed.
+  'scripts/release-gate.sh': 8,
   'scripts/prepublish-guard.sh': 12,
   // 13 -> 14 when the OVERCLAIM pattern was added: published prose claimed routing of
   // every ACTION while the code routes every WRITE and lets reads use the selected
@@ -301,7 +313,19 @@ const REFUSAL_BASELINE = {
   // Three sites left with it (ref_exempt's `return 1` and the two HARD_FAIL=1 arms of
   // the inline filter) and two came back as the three-status handling of the new
   // script's exit code. The decision went with the code, and it is registered there.
-  'scripts/publish-sync.sh': 37,
+  // 37 -> 49 when #116 made publishing incremental. Twelve sites, counted with
+  // refusalSites rather than by eye. Grouped: the deny-pattern.sh source going missing
+  // or defining nothing (2); base_history_is_public refusing an unreadable tree, a
+  // failed rev-list and an empty enumeration (3); the AUDIT_BASE_DIR door's own two
+  // exits (2); a failed fetch refusing instead of falling back to a parentless commit,
+  // with its staging wipe (2); the base check's call site and its wipe (2); and the
+  // refusal to create an empty commit, with its wipe (2) — fourteen by that grouping,
+  // twelve by the grammar, which does not recognise every shape used.
+  //
+  // REGISTERED: publish-sync/base-history-must-refuse-private. The detection is
+  // driveable through AUDIT_BASE_DIR and src/publish-sync.test.ts supplies the input
+  // that makes it fire, which is a fixture history containing project-docs.
+  'scripts/publish-sync.sh': 49,
   'scripts/ref-scan.sh': 13,
   'scripts/source-guard.sh': 5,
   'scripts/version-check.mjs': 3,
