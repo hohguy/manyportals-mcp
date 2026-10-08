@@ -177,8 +177,13 @@ export interface SummarizePipelineResult {
  *     names a portal-blocked field (`screen`), AND any blocked field HubSpot
  *     returns by default is stripped from the RESULT (`screenReturned`, R4.2) — so
  *     `blockedProperties` governs what a read SURFACES, not only what it requests.
- *     Separately, HubSpot-flagged `dataSensitivity=sensitive` fields are never
- *     returned because the client never sends that flag (brief §6b).
+ *     This screen does NOT cover HubSpot's own sensitivity marking. An earlier
+ *     comment here claimed flagged values were never returned because the client
+ *     never sends `dataSensitivity=sensitive`; that selector lists property
+ *     DEFINITIONS and is not required to read a VALUE, so the inference was invalid
+ *     (#261/#262, corrected 2026-10-07). Sensitive values are gated by the token's
+ *     `…sensitive.*` scopes: without one HubSpot documents a 403, with one the value
+ *     is returned here like any other. #263 decides whether that should change.
  *
  * Reads may use the selected default portal (resolveForRead); writes never do.
  */

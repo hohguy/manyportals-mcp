@@ -708,6 +708,28 @@ export function installShutdown(
   }
   process.once('SIGTERM', () => shutdown('SIGTERM'))
   process.once('SIGINT', () => shutdown('SIGINT'))
+  // SIGHUP and SIGBREAK as well (#214), and the reason is worth keeping.
+  //
+  // Once #210 let the spawned-server cases RUN on Windows, two of them failed and showed
+  // the shutdown story was POSIX-only. Windows delivers neither of the two signals above
+  // from `process.kill`: SIGTERM does not exist there at all, and `kill` force-terminates
+  // rather than signalling. What Windows DOES deliver to a node process is SIGINT on a
+  // real console Ctrl+C, SIGBREAK on Ctrl+Break, and SIGHUP when the console window
+  // closes. Registering those is the most a process can do about it; nothing can make a
+  // forced termination clean, which is why no shipped document claims otherwise.
+  //
+  // POSIX gains from the same change. SIGHUP is a terminal hangup, which is the same
+  // "the host is going away" event SIGTERM is, and until now it killed the server by the
+  // default disposition — the exact defect #157 fixed for the other two.
+  //
+  // SIGBREAK is registered unconditionally rather than behind a platform branch because
+  // registering it on darwin was MEASURED not to throw (`os.constants.signals` has no
+  // SIGBREAK there and `process.once` tolerates the name), and where it cannot be
+  // delivered it simply never fires. If some platform ever refuses the registration it
+  // throws here, at startup, before the transport connects — which is as loud as a
+  // failure gets, and the Linux legs run it on every push.
+  process.once('SIGHUP', () => shutdown('SIGHUP'))
+  process.once('SIGBREAK', () => shutdown('SIGBREAK'))
 }
 
 /** Real entry: assemble production deps (file config, env tokens, HTTP client, stdio). */

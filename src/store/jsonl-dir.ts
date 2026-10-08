@@ -113,6 +113,33 @@ export class JsonlDir implements MergedStore {
   private readonly consumed = new Map<string, number>()
   private readonly ownFile: string
   private created = false
+  /**
+   * "This copy's file may END MID-LINE." Nothing wider than that.
+   *
+   * Set in exactly ONE place: the catch around `writeAllSync`/`fsyncSync`, which is the
+   * only code here that can leave a prefix on disk. `mkdirSync` and `openOwnFile` throw
+   * BEFORE any byte is written, so they cannot produce the state this flag names, and
+   * they deliberately do not set it.
+   *
+   * CONSIDERED AND REJECTED (#187): making a directory- or open-level failure sticky too,
+   * so a failed append could not be followed by a successful one. Rejected because it
+   * buys nothing and costs availability. It buys nothing because appending after a failed
+   * open is SAFE — there is no partial line to land on. It costs availability because the
+   * write-ahead audit `attempt` is fail-closed, so a broken store refuses EVERY write: a
+   * transient EMFILE or an EACCES that is then fixed would block all writes until the
+   * process restarts, and the refusal would tell the operator their trail may be corrupt
+   * when it is not. Fail-closed on corruption is right; fail-closed on a recoverable open
+   * is an outage we inflicted on ourselves.
+   *
+   * What a failed append DOES cost is visibility: `FileAuditLog` advances its sequence
+   * number only after a successful append, so a lost line leaves the numbering
+   * contiguous and a reader cannot tell it happened. Advancing the sequence on ATTEMPT
+   * was rejected as the remedy as well, and more firmly: SAFETY.md tells the operator
+   * that a gap in the numbering means a line was removed, so a failed append would
+   * masquerade as tampering. The honest signal is the one already there — the write path
+   * records a durable `attempt` first, so an `attempt` with no outcome after it is the
+   * record that something happened and its result is unknown.
+   */
   private broken = false
 
   constructor(

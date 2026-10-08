@@ -9,6 +9,9 @@ Provenance: only specific HubSpot REST request patterns were harvested (from the
 shinzo-labs/hubspot-mcp v2.0.5 line) and adapted; functions adapted from it retain
 an attribution note at their definition. The MCP tool registrations, single-file
 server structure, telemetry/instrumentation, and HTTP listener of the original are
-NOT used and are NOT dependencies here. That absence is mechanically enforced by
-`npm run provenance:check` (also run in CI), which fails if any telemetry/
-instrumentation package appears in package-lock.json.
+NOT used and are NOT dependencies here. That absence is checked by
+`npm run provenance:check` (also run in CI), which fails if `instrumentation-mcp`
+or a `@shinzolabs` package appears in package-lock.json. It tests for those two
+names; it is not a general audit for telemetry. It reads package-lock.json, which
+npm excludes from published packages, so run it from a source checkout of this
+repository rather than from an installed package or an unpacked bundle.

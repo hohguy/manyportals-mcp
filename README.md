@@ -9,7 +9,7 @@ Keeping the content of records apart is a matter of how you use the assistant: s
 ManyPortals is a self-hosted [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that holds credentials for several HubSpot portals at once.
 
 > [!IMPORTANT]
-> Validate it against your own portals before you enable writes: the first calls to live HubSpot happen at a [portal check](docs/GO-LIVE.md) you run yourself.
+> Validate it against your own portals before you enable writes, at a [portal check](docs/GO-LIVE.md) you run yourself. Starting the server checks token identity before that, for each portal that has a hub ID configured: it asks HubSpot which account the token belongs to, and reads no records. A portal left without a hub ID is skipped and not checked.
 
 ## Quick setup
 
@@ -83,8 +83,9 @@ In `apply` mode the approval step is replaced, for the object types you list, by
 
 ## How writes are kept to the right portal
 
-- **No direct write tool.** Every change runs the steps above, and each step is recorded. The assistant issues each call, including the approval, so what keeps a change from being committed on its own is that your client asks you before the steps marked destructive. See [SAFETY](docs/SAFETY.md).
-- **Writes name their portal.** When a write touches an existing record, that record is read in the named portal first, so you can confirm it before the change is saved.
+- **No direct write tool.** Every change runs the steps above, and the lifecycle steps are recorded. The assistant issues each call, including the approval, so what keeps a change from being committed on its own is that your client asks you before the steps marked destructive. See [SAFETY](docs/SAFETY.md).
+- **Writes name their portal.** A write states the portal it is for; a selected or default portal does not stand in for one. When a write touches an existing record, that record can be read in the named portal first so you can confirm it, and that read is required before the write runs unless the assistant waives it. See [SAFETY](docs/SAFETY.md).
+- **Gate the destructive tools in your client.** In the Claude Desktop extension that is the **Write/delete tools** group under the connector's Tool permissions, which holds exactly `approve_plan` and `execute_plan`. Set it to ask; always-allow removes the last human step.
 - **Default-deny.** Each portal allows only the object types and operations you list.
 - **Startup check.** Each token must report the hub ID you configured, which catches a swapped token.
 - **Token values stay out of results.** They are not included in tool results, logs, or error messages.

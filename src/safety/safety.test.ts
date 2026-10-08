@@ -5,6 +5,7 @@ import {
   SafetyError,
   assertNoContamination,
   findContamination,
+  findSuspectedPropertyRefs,
 } from './index.js'
 import { FakeFolder } from '../store/fake.js'
 
@@ -165,6 +166,26 @@ describe('FilePortalIdIndex — several copies share one folder (#24)', () => {
       { id: '500', foreignPortals: ['PORTAL_A'] },
     ])
     expect(() => assertNoContamination(reader, 'PORTAL_B', ['500'])).toThrow(SafetyError)
+  })
+
+  it('the property tier sees a value another copy attributed, with no contamination check first', () => {
+    // The peer of the test above for the second tier, and the whole point of #176: the
+    // finder refreshes ITSELF. It used to be pure, and saw another copy's attributions
+    // only because both call sites happened to follow a contamination check that had
+    // refreshed. Nothing here calls one, so this fails if that refresh goes away —
+    // which is how "correct by position" became "correct by construction".
+    const folder = new FakeFolder()
+    const reader = new FilePortalIdIndex(folder.storeFor('reader'))
+    const other = new FilePortalIdIndex(folder.storeFor('other'))
+    const properties = { linked_deal_id: '123456789' }
+
+    expect(findSuspectedPropertyRefs(reader, 'PORTAL_A', properties)).toEqual([])
+
+    other.record('PORTAL_B', '123456789') // another copy reads that record under B
+
+    expect(findSuspectedPropertyRefs(reader, 'PORTAL_A', properties)).toEqual([
+      { property: 'linked_deal_id', value: '123456789', owners: ['PORTAL_B'] },
+    ])
   })
 
   it('drops ids recorded for the same portal key under a different hub id', () => {

@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
-import { spawn } from 'node:child_process'
-import { existsSync, writeFileSync, chmodSync, mkdtempSync, statSync, readdirSync } from 'node:fs'
+import { describe, it, expect, vi, afterEach, beforeAll, afterAll } from 'vitest'
+import { execFileSync, spawn } from 'node:child_process'
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { installShutdown } from './index.js'
@@ -45,6 +45,17 @@ describe('installShutdown', () => {
     await vi.waitFor(() => expect(h.codes).toEqual([0]))
     expect(closed).toBe(1)
     expect(h.lines.join('')).toContain('shut down cleanly')
+  })
+
+  it('closes and exits 0 on SIGHUP, which used to kill it by default disposition', async () => {
+    // #214. Added for Windows, where a closing console window is one of the few events
+    // that actually reaches a node process — and it fixed a POSIX gap at the same time:
+    // a terminal hangup is the same "the host is going away" event as SIGTERM, and it
+    // was not handled.
+    const h = harness(async () => {})
+    process.emit('SIGHUP')
+    await vi.waitFor(() => expect(h.codes).toEqual([0]))
+    expect(h.lines.join('')).toContain('SIGHUP')
   })
 
   it('closes and exits 0 on SIGINT', async () => {
@@ -94,32 +105,87 @@ describe('installShutdown', () => {
 })
 
 /**
- * The spawned-process check, gated on dist/ being present AND CURRENT.
+ * The spawned-process check, against an artifact THIS FILE owns (#181).
  *
- * `npm run verify` runs the tests BEFORE the build, so dist may be absent or stale.
- * Existence alone is not enough, and that is not hypothetical: these tests first ran
- * against a stale bundle and reported `code=null signal=SIGTERM`, the pre-change
- * behaviour, which looked like the fix had failed. The same staleness in the other
- * direction is worse — a broken handler passing because dist still holds a good
- * build — so a bundle older than the newest source is skipped, not trusted.
+ * It used to spawn the shared `dist/`, gated on that bundle being present and newer
+ * than the newest source file. Both halves of that went wrong, in opposite directions.
+ * The gate SKIPPED these three cases whenever a source file had been touched since the
+ * last build, which is most of the time, so they almost never ran (#167). And when they
+ * did run they RACED: `src/index.e2e.test.ts`'s `beforeAll` runs `npm run build`, whose
+ * first step deletes `dist`, and vitest runs test FILES in parallel. So a second
+ * consecutive `npm run verify` found a current `dist`, ran these cases, and 2 of the 3
+ * died in the module loader at ~100ms with `code=1 signal=null` and no server stderr at
+ * all: the binary was being deleted while node was reading it.
+ *
+ * Snapshotting the shared `dist` does NOT fix that, which was tried first: the
+ * snapshot's source is the contended resource, so the copy raced the deletion exactly
+ * as the spawn did, and it raced it inside a `beforeAll`, which runs even when its
+ * describe is skipped. This file builds its own artifact instead and shares nothing.
+ * Neither file now cares what the other does, and the three cases run in every suite
+ * rather than when the mtimes happen to line up.
+ *
+ * WHERE it builds matters twice over, both found by spawning a build by hand rather
+ * than by reasoning about it:
+ *   - Under the repository, not $TMPDIR. Node resolves a bare import by walking
+ *     ANCESTOR directories appending `node_modules`, so a build outside this tree never
+ *     reaches the real one and the SDK import fails. `node_modules/.cache/` is inside
+ *     the tree and is gitignored.
+ *   - With `package.json` one level above `dist`. The server reads the manifest
+ *     relative to its own location to report its version, and `"type": "module"` is
+ *     what makes node parse `dist/*.js` as ESM at all. Without it the child exits
+ *     reporting `cannot read the package manifest at ... (ENOENT)`.
+ *
+ * A build FAILURE is LOUD rather than a skip, because a skip is how the mtime gate hid
+ * the missing coverage for so long: `beforeAll` throws with the compiler's own output,
+ * which fails these three cases and nothing else.
  */
-const DIST = join(process.cwd(), 'dist', 'index.js')
+const OWN = join(process.cwd(), 'node_modules', '.cache', 'mp-shutdown-artifact')
+const BIN = join(OWN, 'dist', 'index.js')
 
-function newestSourceMtime(dir: string): number {
-  let newest = 0
-  for (const e of readdirSync(dir, { withFileTypes: true })) {
-    const abs = join(dir, e.name)
-    if (e.isDirectory()) newest = Math.max(newest, newestSourceMtime(abs))
-    else if (e.name.endsWith('.ts') && !e.name.endsWith('.test.ts'))
-      newest = Math.max(newest, statSync(abs).mtimeMs)
-  }
-  return newest
-}
+describe('a spawned server exits on each trigger', () => {
+  beforeAll(() => {
+    // A leftover artifact from an earlier run must not be spawned: a source file deleted
+    // since then would still be sitting in it, which is the staleness the mtime gate was
+    // there to catch.
+    rmSync(OWN, { recursive: true, force: true })
+    mkdirSync(OWN, { recursive: true })
+    try {
+      // THROUGH NODE, NOT THROUGH npx (#210). `npx` on Windows is `npx.cmd`, and
+      // child_process refuses to execute a .cmd without `shell: true` — the mitigation
+      // Node shipped for CVE-2024-27980 — so this failed with `spawnSync npx.cmd EINVAL`
+      // and took all three cases below with it. Naming the compiler's own entry point and
+      // running it with this process's node removes the shim AND the platform branch,
+      // rather than repairing the branch. typescript ships `bin/tsc` as `require(...)`
+      // under a node shebang, so there is nothing platform-specific left here.
+      execFileSync(
+        process.execPath,
+        [
+          join(process.cwd(), 'node_modules', 'typescript', 'bin', 'tsc'),
+          '-p',
+          'tsconfig.build.json',
+          '--outDir',
+          join(OWN, 'dist'),
+        ],
+        { cwd: process.cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+      )
+    } catch (e) {
+      const x = e as { stdout?: string; stderr?: string }
+      throw new Error(
+        `the artifact build for this file failed, so the spawned-server cases cannot ` +
+          `run:\n${x.stdout ?? ''}${x.stderr ?? ''}`,
+        // The compiler's output is the diagnosis, and the original error carries the
+        // status and the signal; eslint's preserve-caught-error rule is right that
+        // dropping it loses the second half.
+        { cause: e },
+      )
+    }
+    copyFileSync(join(process.cwd(), 'package.json'), join(OWN, 'package.json'))
+  }, 180_000)
 
-const distIsCurrent =
-  existsSync(DIST) && statSync(DIST).mtimeMs >= newestSourceMtime(join(process.cwd(), 'src'))
+  afterAll(() => {
+    rmSync(OWN, { recursive: true, force: true })
+  })
 
-describe.skipIf(!distIsCurrent)('a spawned server exits on each trigger', () => {
   function fixture(): string {
     const d = mkdtempSync(join(tmpdir(), 'mp-shutdown-'))
     // expectedHubId 0 means "unknown", so assertHubIds SKIPS its live call and this
@@ -178,7 +244,7 @@ describe.skipIf(!distIsCurrent)('a spawned server exits on each trigger', () => 
   function run(act: (p: ReturnType<typeof spawn>) => void): Promise<string> {
     const d = fixture()
     return new Promise((resolve) => {
-      const p = spawn('node', [DIST], {
+      const p = spawn('node', [BIN], {
         env: {
           ...process.env,
           MANYPORTALS_CONFIG: join(d, 'config.json'),
@@ -223,12 +289,38 @@ describe.skipIf(!distIsCurrent)('a spawned server exits on each trigger', () => 
     expect(await run((p) => p.stdin?.end())).toBe('code=0 signal=null')
   }, 15000)
 
-  it('exits 0 on SIGTERM rather than dying by signal', async () => {
-    // Was `code=null signal=SIGTERM` before this change.
-    expect(await run((p) => p.kill('SIGTERM'))).toBe('code=0 signal=null')
-  }, 15000)
+  /**
+   * SKIPPED on Windows (#214), and not because the product is broken there.
+   *
+   * `p.kill('SIGTERM')` on Windows does not deliver a signal: SIGTERM does not exist on
+   * that platform, and `process.kill` force-terminates the target. The same is true of
+   * `p.kill('SIGINT')` — a real console Ctrl+C reaches a handler, a `kill` does not. So
+   * these two cases report `code=null signal=SIGTERM` on Windows no matter what handlers
+   * the child installed, and they cannot prove or disprove anything there.
+   *
+   * What CAN be proven on Windows is proven: the stdin-EOF case below runs on every
+   * platform, and it is the path Claude Desktop actually uses. `installShutdown` also now
+   * registers SIGHUP and SIGBREAK, which are what Windows does deliver, and the unit
+   * cases above exercise SIGHUP directly rather than through a spawn.
+   *
+   * These failed loudly rather than silently for one day only, between #210 making them
+   * runnable and this gate. That is the right order: a skip added before anyone saw the
+   * failure is how #167 hid missing coverage for weeks.
+   */
+  it.skipIf(process.platform === 'win32')(
+    'exits 0 on SIGTERM rather than dying by signal',
+    async () => {
+      // Was `code=null signal=SIGTERM` before this change.
+      expect(await run((p) => p.kill('SIGTERM'))).toBe('code=0 signal=null')
+    },
+    15000,
+  )
 
-  it('exits 0 on SIGINT rather than dying by signal', async () => {
-    expect(await run((p) => p.kill('SIGINT'))).toBe('code=0 signal=null')
-  }, 15000)
+  it.skipIf(process.platform === 'win32')(
+    'exits 0 on SIGINT rather than dying by signal',
+    async () => {
+      expect(await run((p) => p.kill('SIGINT'))).toBe('code=0 signal=null')
+    },
+    15000,
+  )
 })

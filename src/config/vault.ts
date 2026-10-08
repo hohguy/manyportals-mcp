@@ -11,9 +11,12 @@ import { looksLikeCredential, redactKey } from './credential-shape.js'
  * dependency, per the standing credential-model decision). The passphrase
  * reaches the server as `MANYPORTALS_VAULT_KEY` — set manually, or entered in the
  * Claude Desktop bundle's settings (a `sensitive` user-config field) and passed as
- * env at launch. How Desktop protects that stored value is NEEDS_VERIFICATION, and
- * its Local MCP servers screen shows it in plain text (#52), so do not describe it
- * as keychain-held.
+ * env at launch. How Desktop protects that stored value is NEEDS_VERIFICATION, so do
+ * not describe it as keychain-held. The Local MCP servers screen showed the value in
+ * plain text when checked on 2026-09-15 and showed it MASKED on 2026-10-06 on version
+ * 2.26454.0 for macOS, so neither observation is current on its own — treat that screen
+ * as sensitive and cite the client and version (#52, #269). Masking there changes
+ * nothing about the environment-variable exposure, which is #251.
  *
  * Failure posture: ANY decrypt/parse problem collapses to a single sanitized
  * `VaultError` — never the underlying error, which could echo file contents.

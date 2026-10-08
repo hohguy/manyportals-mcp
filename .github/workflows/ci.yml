@@ -14,8 +14,18 @@ on:
 # A newer push supersedes an older run instead of both finishing. Chasing one
 # platform failure across four pushes ran the full matrix four times to completion,
 # which is most of a day's budget for information nobody read.
+#
+# THE EVENT IS PART OF THE GROUP, so a push cannot cancel a dispatched run. A dispatch is
+# the EVIDENCE a release gate reads ("did the cross-platform legs conclude success for this
+# exact commit"), and under one shared group a push to main seconds later cancelled it:
+# that happened twice on 2026-10-05, and a cancelled run produces no evidence at all. The
+# gate would have been least reliable exactly when the repository was busiest.
+#
+# Push still supersedes push, which is the budget reason above. Two dispatches on the same
+# ref still supersede each other: that is one operator dispatching twice, it is visible as
+# a cancelled run, and the later run is the evidence anyway.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -24,7 +34,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        # PINNED rather than `ubuntu-latest` (#119). That label migrates to Ubuntu 26 on
+        # 2026-10-19, which moves coreutils versions, grep behaviour and the default
+        # locale with no commit to point at. This repo's gates shell out to grep, find,
+        # stat, git and npm and parse what comes back, and two defects this cycle were
+        # exactly that class while neither was a code change. Pinning makes the base
+        # image a decision with a diff. The cross-platform job below proves the next
+        # LTS before this line moves.
+        os: [ubuntu-24.04]
         # 24 = Active LTS, 26 = Current (the dev runtime); 22 = oldest still-maintained
         # LTS floor. 20 dropped (active support ended 2026-04; Maintenance-only).
         node: [22, 24, 26]
@@ -46,6 +63,15 @@ jobs:
       # this tree actually holds, lint, formatting, types, tests, and the build.
       - run: npm run verify
 
+      # No separate artifact step any more. It existed because src/shutdown.test.ts read
+      # the shared dist/, which verify builds LAST, so the three spawned-process cases
+      # skipped here and on a developer's machine (#167). They now build their own copy
+      # into a directory they own (#181), so they run inside `npm test` above, in every
+      # suite, and a second step would only build twice per matrix leg to run them again.
+      #
+      # `npm run test:artifact` still exists as a local convenience for running that one
+      # file; it is not a gate and nothing depends on it.
+
   # THE SECOND TREE is covered by a job in a different workflow, which is not part of the
   # published repository and so is not visible here. Every job in THIS file runs the
   # product, and every command in it is `npm` or `node`: a job here may only name a file
@@ -54,15 +80,29 @@ jobs:
   # public repository until #121; `npm run verify` above now includes the check that
   # would have caught it.
 
-  # Windows and macOS, billed at 2x and 10x. ManyPortals must run on both, so this is
+  # Windows and macOS, billed at 2x and 10x, plus the next Ubuntu LTS at 1x. ManyPortals
+  # must run on both of the former, so this is
   # not optional coverage; it is coverage on a cadence instead of on every push. It
-  # runs on a pull request, on the weekly schedule, and on demand, which is what to use
-  # before cutting a release.
+  # runs on a pull request, on the weekly schedule, and on demand. On demand is what to use
+  # before cutting a release, and that is no longer only a sentence here: the release gate
+  # refuses until a run for the release commit's own SHA has these legs green (#212).
   #
   # The trade is stated rather than assumed: a platform regression pushed straight to
-  # main is not caught until one of those three happens. That is acceptable while the
-  # product's platform-specific surface is small and its POSIX-only parts are already
-  # scoped and named (#96); it would not be acceptable if that surface grew.
+  # main is not caught until one of those three happens. That is ACCEPTED, flatly, and it
+  # is no longer conditioned on anything.
+  #
+  # It used to read "acceptable while the product's platform-specific surface is small ...
+  # it would not be acceptable if that surface grew". Nothing measured that surface and
+  # nothing would have noticed it growing. It grew anyway, when #181 made a test spawn a
+  # build tool, and the sentence went on asserting the trade for weeks. A condition with no
+  # mechanism is a wish (#212), so the condition is gone and a mechanism takes its place:
+  # the release gate refuses to cut a release unless a cross-platform run for the release
+  # commit's OWN SHA concluded success on every leg of the matrix below, and `cancelled` is
+  # not success there. So a platform regression can sit on main between pushes, and it
+  # cannot be released.
+  #
+  # The POSIX-only parts are scoped and named on #96. That is a fact about the code, not a
+  # condition this trade rests on.
   cross-platform:
     if: github.event_name != 'push'
     runs-on: ${{ matrix.os }}
@@ -73,6 +113,12 @@ jobs:
           - os: windows-latest
             node: 24
           - os: macos-latest
+            node: 24
+          # Ubuntu 26 ahead of the `ubuntu-latest` migration (#119): 1x, and off the push
+          # path, so the next LTS is proven BEFORE the pin above moves rather than after.
+          # NEEDS_VERIFICATION that this runner label resolves today — run the workflow on
+          # demand and read the result rather than assuming the label exists.
+          - os: ubuntu-26.04
             node: 24
     steps:
       - uses: actions/checkout@v5

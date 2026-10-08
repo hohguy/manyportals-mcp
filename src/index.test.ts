@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import {
   PRODUCT,
@@ -14,7 +14,12 @@ import {
   resolveConfigPath,
   trailFileNotes,
 } from './index.js'
-import { FakeConfigProvider, encryptVaultTokens, loadConfig } from './config/index.js'
+import {
+  FakeConfigProvider,
+  encryptVaultTokens,
+  loadConfig,
+  type PortalConfig,
+} from './config/index.js'
 import { SafeError } from './errors/index.js'
 import { FakeHubSpotClient } from './hubspot/fake.js'
 
@@ -379,11 +384,18 @@ describe('a relative path from the environment is refused, whichever variable ca
         MANYPORTALS_TOKENS_FILE: noTokens,
       },
       () => {
+        // The configDir is hoisted and the expectation is BUILT rather than spelled with
+        // a separator (#211). Writing `/tmp/mp-config-dir/tokens.vault` asserted a POSIX
+        // spelling, so this failed on Windows at `D:\tmp\mp-config-dir\tokens.vault`
+        // while the product was behaving correctly. The claim here is a RELATIONSHIP —
+        // anchored to the config directory — and `resolve` is how the resolver expresses
+        // it, so that is how the expectation should express it too.
+        const configDir = '/tmp/mp-config-dir'
         const resolved = buildTokenSources({
           vaultFile: 'tokens.vault',
-          configDir: '/tmp/mp-config-dir',
+          configDir,
         }).vaultFilePath
-        expect(resolved).toBe('/tmp/mp-config-dir/tokens.vault')
+        expect(resolved).toBe(resolve(configDir, 'tokens.vault'))
         // The distinction that makes relative safe HERE and unsafe in an environment
         // variable: cwd differs between Claude Desktop and a shell, the config's own
         // directory does not. Asserting the negative is the half that would catch a
@@ -546,6 +558,108 @@ describe('startServer — composition + boot guard ordering', () => {
     ).rejects.toThrow()
     // The transport is never connected when the boot guard fails.
     expect(transport.started).toBe(false)
+  })
+
+  /**
+   * SAFETY.md "A startup check catches a swapped token wherever you set a hub ID.",
+   * sentence 1 (#202): "When the server starts, it confirms that each token reports the hub
+   * ID you configured." Registered in scripts/claims-register.json.
+   *
+   * Two words carry it. "Each" is an enumeration, so three portals are configured and all
+   * three tokens must be consulted — one portal checked out of three would satisfy a test
+   * written over a single-portal config, which is what every other test in this block uses.
+   * "When the server starts" is the ordering, asserted by recording any consultation that
+   * happens once the transport is serving: the list must stay empty.
+   *
+   * What this does NOT prove is the CONSEQUENCE of a token answering with another hub id.
+   * That is the next sentence and it has its own test below, because one test bound to both
+   * would leave a reader unable to say which sentence it proves.
+   */
+  it('asks every configured token for its own hub id while starting, before serving', async () => {
+    const config = loadConfig(
+      new FakeConfigProvider({
+        portals: {
+          PORTAL_A: { tokenEnv: 'A', expectedHubId: 111, label: 'Portal A', allowWrite: true },
+          PORTAL_B: { tokenEnv: 'B', expectedHubId: 222, label: 'Portal B', allowWrite: true },
+          PORTAL_C: { tokenEnv: 'C', expectedHubId: 333, label: 'Portal C', allowWrite: true },
+        },
+        writeMode: 'propose',
+      }),
+    )
+    const client = new FakeHubSpotClient()
+    client.setAccountInfo('tok-PORTAL_A', 111)
+    client.setAccountInfo('tok-PORTAL_B', 222)
+    client.setAccountInfo('tok-PORTAL_C', 333)
+    const transport = new FakeTransport()
+
+    const whileServing: string[] = []
+    const realGetAccountInfo = client.getAccountInfo.bind(client)
+    client.getAccountInfo = async (ctx) => {
+      if (transport.started) whileServing.push(ctx.token)
+      return realGetAccountInfo(ctx)
+    }
+
+    await startServer({
+      config,
+      client,
+      resolveToken,
+      transport: transport as unknown as Transport,
+    })
+
+    const asked = client.calls.filter((c) => c.method === 'getAccountInfo').map((c) => c.token)
+    expect(asked, 'no token was consulted, so this proves nothing').not.toEqual([])
+    expect([...asked].sort()).toEqual(['tok-PORTAL_A', 'tok-PORTAL_B', 'tok-PORTAL_C'])
+    expect(whileServing, 'a hub id was confirmed only after the server began serving').toEqual([])
+    expect(transport.started).toBe(true)
+  })
+
+  /**
+   * SAFETY.md "A startup check catches a swapped token wherever you set a hub ID.",
+   * sentence 2 (#202): "A mislabelled or swapped token stops the server from starting, as
+   * does a token the server cannot check at all." Registered in
+   * scripts/claims-register.json.
+   *
+   * The second half is the understatement #202 recorded: the page used to promise a refusal
+   * only for a token that answers WRONGLY, while a token that cannot answer at all is also
+   * refused. So both cases are enumerated here, and in both the assertion is the one the
+   * sentence makes — not that `assertHubIds` throws, which boot.test.ts already pins, but
+   * that the server never begins serving.
+   *
+   * The timeout case is the third way a token cannot be checked. It is proven at the unit
+   * level in boot.test.ts instead, because the boot guard's default timeout is 10s and
+   * `startServer` does not take an override — a test that waited for it would buy the same
+   * assertion for ten seconds.
+   */
+  it('startup is refused for a mislabelled token and for one it cannot check at all', async () => {
+    const mislabelled = new FakeHubSpotClient()
+    mislabelled.setAccountInfo('tok-PORTAL_A', 999) // answers with another hub than configured
+    const cases: Array<[string, FakeHubSpotClient]> = [
+      ['a token reporting a different hub id', mislabelled],
+      // Unseeded: `getAccountInfo` throws, which is the auth/connectivity case.
+      ['a token whose account info cannot be fetched at all', new FakeHubSpotClient()],
+    ]
+    expect(cases, 'no case was exercised, so this proves nothing').toHaveLength(2)
+
+    const outcomes: string[] = []
+    for (const [label, client] of cases) {
+      const transport = new FakeTransport()
+      let refused = false
+      try {
+        await startServer({
+          config: cfg(111),
+          client,
+          resolveToken,
+          transport: transport as unknown as Transport,
+        })
+      } catch {
+        refused = true
+      }
+      outcomes.push(`${label}: refused=${refused} served=${transport.started}`)
+    }
+    expect(outcomes).toEqual([
+      'a token reporting a different hub id: refused=true served=false',
+      'a token whose account info cannot be fetched at all: refused=true served=false',
+    ])
   })
 })
 
@@ -810,6 +924,103 @@ describe('an inactive vault is not a silent downgrade (#79)', () => {
       },
       () => {
         expect(buildTokenSources().notes.join(' | ')).not.toContain('INACTIVE')
+      },
+    )
+  })
+})
+
+/**
+ * WHEN the credential sources are read, and what that costs. `buildTokenSources` is the
+ * startup composition step for tokens: the vault is decrypted whole and the plaintext file
+ * parsed whole, once, into long-lived maps. Both sentences below were wrong on the page
+ * before #206 — one FALSE ("a token is read when a call is made") and one describing
+ * operator discipline as enforcement ("instead of a plain file") — so both are pinned
+ * here, against the real files rather than against hand-built sources.
+ */
+describe('the token sources are read while the server starts, not per call (#206)', () => {
+  const portal = (): PortalConfig =>
+    ({ expectedHubId: 1, label: 'P', apiHost: 'api.hubapi.com' }) as PortalConfig
+
+  /** A vault holding PORTAL_A and a plaintext file holding PORTAL_B, both on disk. */
+  function bothFiles(tag: string): { vaultPath: string; tokenPath: string; pass: string } {
+    const dir = mkdtempSync(join(tmpdir(), `mp-${tag}-`))
+    const vaultPath = join(dir, 'tokens.vault')
+    const tokenPath = join(dir, 'tokens.json')
+    const pass = 'correct horse battery staple'
+    writeFileSync(vaultPath, encryptVaultTokens({ PORTAL_A: 'from-vault' }, pass), { mode: 0o600 })
+    writeFileSync(tokenPath, JSON.stringify({ PORTAL_B: 'from-file' }), { mode: 0o600 })
+    return { vaultPath, tokenPath, pass }
+  }
+
+  /**
+   * SAFETY.md "Token values stay out of results.", the sentence (#206): "Tokens are read when
+   * the server starts and kept in memory for the life of the process."
+   *
+   * Registered in scripts/claims-register.json. It REPLACES the sentence the audit found
+   * FALSE — "a token is read when a call is made" — so both directions of the replacement
+   * are asserted: the values survive the files being deleted, which is what "kept in
+   * memory" means, and they were read at BUILD time, which is what "when the server starts"
+   * means.
+   *
+   * The second is the part a test can get wrong. A reader that happened to cache would look
+   * identical, so the CONTROL is a second set of sources built after the deletion: it finds
+   * nothing, which places the read at the build rather than at the call.
+   */
+  it('reads the vault and the plain token file while building the sources, then answers from memory', () => {
+    const { vaultPath, tokenPath, pass } = bothFiles('startup-read')
+    withEnv(
+      {
+        MANYPORTALS_VAULT_KEY: pass,
+        MANYPORTALS_VAULT_FILE: vaultPath,
+        MANYPORTALS_TOKENS_FILE: tokenPath,
+      },
+      () => {
+        const ts = buildTokenSources()
+        expect(ts.resolve('PORTAL_A', portal())).toBe('from-vault')
+        expect(ts.resolve('PORTAL_B', portal())).toBe('from-file')
+
+        rmSync(vaultPath)
+        rmSync(tokenPath)
+
+        // Kept in memory: the same sources still answer with both files gone.
+        expect(ts.resolve('PORTAL_A', portal())).toBe('from-vault')
+        expect(ts.resolve('PORTAL_B', portal())).toBe('from-file')
+
+        // CONTROL: a set built now finds nothing, so the reads above happened at build.
+        const after = buildTokenSources()
+        expect(() => after.resolve('PORTAL_A', portal())).toThrow()
+        expect(() => after.resolve('PORTAL_B', portal())).toThrow()
+      },
+    )
+  })
+
+  /**
+   * SAFETY.md "Token values stay out of results.", the sentence (#206): "A plain token file
+   * is still read if one is present, so delete it once its contents are in the vault."
+   *
+   * Registered in scripts/claims-register.json, and it is #198's correction: the page said
+   * the vault was used "instead of" the plain file, which described operator discipline as
+   * enforcement. Setting a passphrase does not disable the plaintext file, so this asserts
+   * the thing the sentence warns about — with the vault ACTIVE and answering, a portal
+   * present only in the plaintext file still resolves from it.
+   *
+   * The vault answering for its OWN portal in the same call is the control: it rules out a
+   * run where the vault was inactive and the file was simply the only source there was.
+   */
+  it('a plain token file is still read when the vault is active', () => {
+    const { vaultPath, tokenPath, pass } = bothFiles('leftover-file')
+    withEnv(
+      {
+        MANYPORTALS_VAULT_KEY: pass,
+        MANYPORTALS_VAULT_FILE: vaultPath,
+        MANYPORTALS_TOKENS_FILE: tokenPath,
+      },
+      () => {
+        const ts = buildTokenSources()
+        expect(ts.vaultActive, 'the vault is inactive, so the file is not a LEFTOVER').toBe(true)
+        expect(ts.presence('PORTAL_A', portal())).toEqual({ present: true, source: 'vault' })
+        expect(ts.presence('PORTAL_B', portal())).toEqual({ present: true, source: 'file' })
+        expect(ts.resolve('PORTAL_B', portal())).toBe('from-file')
       },
     )
   })

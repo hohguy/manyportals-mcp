@@ -1,4 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { Transport, TransportSendOptions } from '@modelcontextprotocol/sdk/shared/transport.js'
+import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import type { AuditQuery } from '../audit/index.js'
 import type { PlanService, WriteOperation } from '../plans/index.js'
@@ -63,6 +65,80 @@ const fail = (e: unknown): ToolResult => ({
   isError: true,
 })
 
+/**
+ * THE OTHER CHOKEPOINT, at the TRANSPORT, because `ok` and `fail` cannot be reached by
+ * everything that answers a call (#184).
+ *
+ * Those two cover HANDLER output: every result a handler produces, and nothing else. A
+ * call the SDK rejects BEFORE dispatch never reaches a handler. The bundled `McpServer`
+ * answers that one out of its own `catch`, building a `CallToolResult` from the raw error
+ * message, and that message is assembled from the zod issue list — where an issue's
+ * `path` carries the caller's own property NAMES. So `draft_plan` with a
+ * credential-shaped property name and a non-string value returned the credential
+ * verbatim, as did `Tool <credential> not found` for a credential-shaped tool name.
+ * Measured 2026-10-05; both are pinned in credential-echo.test.ts.
+ *
+ * WHAT THIS COVERS: every JSON-RPC message this server sends. Handler results, results
+ * the SDK built in place of a handler, JSON-RPC ERROR responses, notifications, and
+ * whatever a future SDK version decides to answer on its own. The net is at the exit
+ * rather than at the places a message can be born, for the same reason `ok` is: the next
+ * birthplace is the one nobody patches. The error-response leg is why this is at the
+ * transport and not on `CallToolResult`: malformed `params` is answered as a JSON-RPC
+ * error rather than as a tool result, so a hook on tool results would never see one. No
+ * such message is KNOWN to carry a credential today — zod reports the issue `path`, which
+ * for a request-level failure is `params.arguments`, and `Method not found` names no
+ * method — so that leg is covered rather than measured, and the case is pinned as clean.
+ *
+ * WHAT IT DOES NOT COVER, stated rather than left to be discovered:
+ *  - Only the two shapes `credential-shape.ts` recognises, a HubSpot PAT and a PEM block.
+ *    A secret of another shape is no more recognised here than it is there.
+ *  - A string reachable only THROUGH a non-plain object. `redactCredentialsDeep`
+ *    deliberately does not rebuild one, because rebuilding a Date destroys it, so this
+ *    pass is the deep walk alone and not the walk-then-string pair that `ok` runs. That
+ *    pair is unchanged and still runs where it has work to do: a handler result arrives
+ *    here already serialized by `ok` into a single string.
+ *  - Anything written DOWN. This redacts outgoing text and records nothing, so a
+ *    schema-rejected call stays unaudited — the deliberate decision pinned in
+ *    credential-echo.test.ts, because a buggy client must not become an unbounded writer
+ *    of an append-only file with no delete API (#102).
+ *
+ * TWO ASSUMPTIONS ABOUT THE TRANSPORT, from the safety review of this change.
+ *  - `redactCredentialsDeep` REBUILDS every plain object it walks, with
+ *    `Object.create(null)` deliberately (so a `__proto__` key cannot vanish). Applied to
+ *    a whole JSONRPCMessage, that hands the transport a null-prototype message. Invisible
+ *    to `JSON.stringify`, which is all the stdio transport does, so this is safe for what
+ *    ships. It would NOT be safe for a transport that calls a method on the message or
+ *    tests its prototype — `message.hasOwnProperty(...)` throws on a null prototype. If an
+ *    HTTP/SSE transport is ever added, check it before assuming this still holds.
+ *  - The ENVELOPE is now in scope where the handler chokepoints could not reach it. A
+ *    JSON-RPC `id` that was a credential-shaped STRING would be rewritten, and the client
+ *    could then not match the response to its request. Not reachable with any known
+ *    client (ids are integers), and the alternative — exempting `id` — would be a hole
+ *    with a name, so it is left covered and written down instead.
+ *
+ * THE COST, recorded because it is not free. A net further out covers the same property
+ * as the layer inside it, so an end-to-end call can no longer tell a working `fail` from
+ * one that stopped redacting. The guard register said so within the hour this landed:
+ * `mcp/credential-shapes-never-returned` reported THE GUARD CANNOT FAIL. The inner layer
+ * is kept and made observable rather than deleted — credential-echo.test.ts watches a
+ * handler's own output before this pass reaches it — so both layers stay provable alone.
+ *
+ * A subclass rather than a reassigned method, so the override is typed and the invariant
+ * is visible at the `new`. `send` is wrapped IN PLACE rather than behind a wrapper object:
+ * the SDK assigns `onmessage`/`onclose` onto the transport it is handed and `close()` acts
+ * on that same object, so keeping its identity is the cheaper half of the trade.
+ * Connecting the same transport twice would wrap twice, which is harmless — the
+ * placeholder is not credential-shaped, so a second pass has nothing left to do.
+ */
+class RedactingMcpServer extends McpServer {
+  override async connect(transport: Transport): Promise<void> {
+    const send = transport.send.bind(transport)
+    transport.send = (message: JSONRPCMessage, options?: TransportSendOptions) =>
+      send(redactCredentialsDeep(message), options)
+    await super.connect(transport)
+  }
+}
+
 export interface McpServerDeps {
   registry: PortalRegistry
   plans: PlanService
@@ -77,7 +153,10 @@ export interface McpServerDeps {
  * write-PLAN lifecycle are exposed; no raw write tools are registered (AR-2).
  */
 export function createMcpServer(deps: McpServerDeps): McpServer {
-  const server = new McpServer({
+  // RedactingMcpServer, not McpServer: the credential chokepoint has to cover the
+  // results the SDK builds without asking a handler, which is every call it rejects
+  // before dispatch (#184). See the class above.
+  const server = new RedactingMcpServer({
     name: deps.serverName ?? 'manyportals-mcp',
     version: deps.version ?? '0.0.0',
   })
@@ -210,7 +289,7 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
     'summarize_pipeline',
     {
       description:
-        "Summarize a deal or ticket pipeline: the number of records in each stage (and the total) for the given pipeline, or the portal's first pipeline for that object type if none is named. objectType defaults to 'deals'. Uses the explicit portal, else the selected default. Returns stage labels and counts only — no record fields are returned (a sampled record id per stage is recorded to the internal cross-portal index, per the data-at-rest note in SAFETY_MODEL).",
+        "Summarize a deal or ticket pipeline: the number of records in each stage (and the total) for the given pipeline, or the portal's first pipeline for that object type if none is named. objectType defaults to 'deals'. Uses the explicit portal, else the selected default. Returns a stage id, label and record count for each stage — no record fields are returned (a sampled record id per stage is recorded to the internal cross-portal index, per the data-at-rest note in SAFETY_MODEL).",
       inputSchema: {
         portal: portal.optional(),
         objectType: z.enum(['deals', 'tickets']).optional(),
@@ -260,7 +339,7 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
     'add_note',
     {
       description:
-        'Draft a plan to add a note to an EXPLICIT portal (optionally associated to records). DRAFTS ONLY — nothing is written until the plan passes validate → (preflight) → approve → execute. The portal must allowlist "notes" + "create".',
+        'Draft a plan to add a note to an EXPLICIT portal (optionally associated to records). DRAFTS ONLY — nothing is written until the plan passes validate and execute, with an approve step in between unless this portal is in apply mode for this object type, and an inspect_plan_target step if it associates to an existing record. The portal must allowlist "notes" + "create".',
       inputSchema: {
         portal,
         body: z.string().min(1),
@@ -276,7 +355,7 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
     'create_task',
     {
       description:
-        'Draft a plan to create a task in an EXPLICIT portal. DRAFTS ONLY — the plan still requires validate → approve → execute. Status/priority use HubSpot values (e.g. NOT_STARTED, HIGH). The portal must allowlist "tasks" + "create".',
+        'Draft a plan to create a task in an EXPLICIT portal. DRAFTS ONLY — the plan still requires validate and then execute, with an approve step in between unless this portal is in apply mode for this object type. Status/priority use HubSpot values (e.g. NOT_STARTED, HIGH). The portal must allowlist "tasks" + "create".',
       inputSchema: {
         portal,
         subject: z.string().min(1),
@@ -298,7 +377,7 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
     'log_call',
     {
       description:
-        'Draft a plan to log a call in an EXPLICIT portal. DRAFTS ONLY — the plan still requires validate → approve → execute. Direction is INBOUND/OUTBOUND; duration is milliseconds. The portal must allowlist "calls" + "create".',
+        'Draft a plan to log a call in an EXPLICIT portal. DRAFTS ONLY — the plan still requires validate and then execute, with an approve step in between unless this portal is in apply mode for this object type. Direction is INBOUND/OUTBOUND; duration is milliseconds. The portal must allowlist "calls" + "create".',
       inputSchema: {
         portal,
         body: z.string().min(1),
@@ -320,7 +399,7 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
     'log_meeting',
     {
       description:
-        'Draft a plan to log a meeting in an EXPLICIT portal. DRAFTS ONLY — the plan still requires validate → approve → execute. The portal must allowlist "meetings" + "create".',
+        'Draft a plan to log a meeting in an EXPLICIT portal. DRAFTS ONLY — the plan still requires validate and then execute, with an approve step in between unless this portal is in apply mode for this object type. The portal must allowlist "meetings" + "create".',
       inputSchema: {
         portal,
         title: z.string().min(1),
@@ -338,7 +417,7 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
     'update_deal_stage',
     {
       description:
-        'Draft a plan to move a deal to another stage in an EXPLICIT portal. DRAFTS ONLY — the plan still requires validate → preflight (it updates an existing record) → approve → execute. Stage ids are discoverable via summarize_pipeline. The portal must allowlist "deals" + "update".',
+        'Draft a plan to move a deal to another stage in an EXPLICIT portal. DRAFTS ONLY — the plan requires validate, then inspect_plan_target (it updates an existing record, and for a stage write that step cannot be waived), then execute, with an approve step in between unless this portal is in apply mode for this object type. Stage ids are discoverable via summarize_pipeline. The portal must allowlist "deals" + "update".',
       inputSchema: {
         portal,
         dealId: z.string().min(1),
@@ -446,13 +525,17 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
     'get_audit_log',
     {
       description:
-        "Read the append-only audit log for a portal. Defaults to the selected portal (like the read tools); pass an explicit `portal`, or `allPortals: true` for every portal. Errors if no portal is given and none is selected. The result is UNBOUNDED and is not truncated: it returns every recorded event, so on a long-lived setup it can be large — and it grows faster than it used to, because each server copy merges every other copy's trail. Prefer a single `portal` when you only need one, and expect the whole history rather than a recent window. READING THE NUMBERS: each event carries `writer` (the server copy that recorded it) and `seq` (that writer's own 1-based counter). `seq` is per-writer-process — NOT per-portal and NOT global — and it spans every portal that process touched, so in a filtered view the numbering RESTARTS at each writer and SKIPS the numbers that went to other portals. Those restarts and gaps are EXPECTED and do NOT mean events are missing or were removed. `seq` is only meaningful paired with `writer`; `writer: 'legacy'` marks events recorded before per-writer trails existed. For this view's own extent read `n` (each event's position in this result) out of `count`. READING `redacted`: when present it lists short handles for material the SERVER removed from that event, one per distinct value. It is set by the server and cannot be supplied by a caller, so a `(redacted: ...)` marker in an event with no matching handle was typed by whoever made the call rather than put there by the redactor. The same value yields the same handle in every event, so repeated failures involving one unidentified value can be counted without the value ever being stored.",
-      inputSchema: { portal: portal.optional(), allPortals: z.boolean().optional() },
+        "Read the append-only audit log for a portal. Defaults to the selected portal (like the read tools); pass an explicit `portal`, or `allPortals: true` for every portal. Errors if no portal is given and none is selected. PASS `limit` FOR THE MOST RECENT N EVENTS, which is what a reader with a context window should do. Without it the result is not truncated: it returns every recorded event, so on a long-lived setup it can be large, and it grows faster than it used to because each server copy merges every other copy's trail. Prefer a single `portal` when you only need one. READING THE NUMBERS: each event carries `writer` (the server copy that recorded it) and `seq` (that writer's own 1-based counter). `seq` is per-writer-process — NOT per-portal and NOT global — and it spans every portal that process touched, so in a filtered view the numbering RESTARTS at each writer and SKIPS the numbers that went to other portals. Those restarts and gaps are EXPECTED and do NOT mean events are missing or were removed. `seq` is only meaningful paired with `writer`; `writer: 'legacy'` marks events recorded before per-writer trails existed. For this view's own extent read `n` (each event's position in the WHOLE log for this view, not in the slice you were handed) out of `count` (how many events that log holds). So `limit: 3` against 174 events returns n 172, 173, 174 of count 174, which says both that this is a window and where it sits. READING `redacted`: when present it lists short handles for material the SERVER removed from that event, one per distinct value. It is set by the server and cannot be supplied by a caller, so a `(redacted: ...)` marker in an event with no matching handle was typed by whoever made the call rather than put there by the redactor. The same value yields the same handle in every event, so repeated failures involving one unidentified value can be counted without the value ever being stored.",
+      inputSchema: {
+        portal: portal.optional(),
+        allPortals: z.boolean().optional(),
+        limit: z.number().int().positive().optional(),
+      },
       annotations: { readOnlyHint: true },
     },
-    async ({ portal: p, allPortals }) => {
+    async ({ portal: p, allPortals, limit }) => {
       try {
-        return ok(h.getPlanLog({ portalKey: p, allPortals }))
+        return ok(h.getPlanLog({ portalKey: p, allPortals, limit }))
       } catch (e) {
         return fail(e)
       }

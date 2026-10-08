@@ -4,20 +4,23 @@ Patches, bug reports and questions are welcome. Please read the note on how this
 
 ## How this repository is published
 
-This repository is assembled from a private development repository and published as a single commit per release. The private repository holds decision history and internal notes that are not published.
+This repository is assembled from a private development repository. Each release is a commit on top of the one before it, so the history here is continuous and a commit you cite keeps resolving. The private repository holds decision history and internal notes that are not published.
 
-**A pull request here cannot be merged in the usual way.** The next release would overwrite the history it landed in. So the flow is:
+**The development repository is the source of truth.** Every file the assembler owns is written from it at each release. A change that lands only here is taken back by the next release unless someone copies it across, and the assembler refuses to do that quietly: it stops and names the files it is about to overwrite. So a merged change cannot vanish without someone being told.
+
+A pull request here can be merged. The change still has to reach the development repository to survive, so the flow is:
 
 1. Open an issue, or a pull request with the change you have in mind.
 2. The change is reviewed here, in the open.
-3. If it is accepted, it is applied in the development repository and ships in the next release.
-4. Your pull request is closed with a link to the release, and you are credited in the release notes.
+3. If it is accepted, it is applied in the development repository and ships in a later release.
+4. The pull request is closed with a reference to the release that carries the change, and the release notes say where it came from.
 
-That is unusual, and it means you do not get a merge commit with your name on it in this repository. If that matters to you, say so in the issue before you write code, and we will discuss it.
+For most changes that means you do not get a merge commit with your name on it in this repository. If that matters to you, say so in the issue before you write code.
 
 ## Before you open a pull request
 
-- **Run the checks.** `npm ci && npm run verify` must pass. That covers linting, formatting, types, tests, a credential scan, and a plain-language check over the published documents.
+- **Run the checks.** `npm ci && npm run verify` must pass. That covers linting, formatting, types, tests, a credential scan, a plain-language check over the published documents, a check that every registered guard can still fail, and a check that binds the sentences in [SAFETY](docs/SAFETY.md)'s "What it protects" section to tests.
+- **Two of those checks will say more than you expect, and that is deliberate.** If you add a guard, it has to come with the change that makes it fail, or the guard register refuses it. If you edit a sentence in [SAFETY](docs/SAFETY.md)'s "What it protects" section, the claims check tells you what to update and prints both the sentence it expected and the one it found. Both registers cover what is registered in them: the guard register proves its own entries, and its refusal count is a count rather than a test for every decision. Neither is a hazing ritual: both exist because a check nobody can break is not a check, and because that page drifted from the code more than once. Ask in an issue if a message is not enough to act on.
 - **Add a test for behaviour.** A change to routing, credentials, the write lifecycle, the audit log or the safety checks needs a test that fails without your change. Break your own guard on purpose and watch the test fail, then restore it.
 - **No new dependencies** without agreeing it first. This server handles credentials for several businesses, and every dependency is a supply-chain risk.
 - **Keep changes small and separate.** One concern per pull request. A refactor bundled with a fix is hard to review and hard to revert.

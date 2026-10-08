@@ -7,6 +7,7 @@ import { FakeConfigProvider, loadConfig } from '../config/index.js'
 import { REDACTED_IN_TEXT } from '../config/credential-shape.js'
 import { PortalRegistry } from '../portals/index.js'
 import { FakeHubSpotClient } from '../hubspot/fake.js'
+import type { HubSpotClient } from '../hubspot/index.js'
 import { PortalIdIndex } from '../safety/index.js'
 import { FileAuditLog, InMemoryAuditLog } from '../audit/index.js'
 import { JsonlDir } from '../store/jsonl-dir.js'
@@ -35,7 +36,15 @@ import { createMcpServer } from './server.js'
  */
 const PAT = ['pat', 'na1', '0f2e4c6a', '1b3d', '5e7f', '9a0b', 'c1d2e3f4a5b6'].join('-')
 
-function build() {
+/**
+ * `resolveToken` and `hubspot` are injectable for the #206 block at the end of this file,
+ * which needs a CONFIGURED token value of its own choosing and a client that fails with
+ * it. Every other caller takes the defaults and is unaffected.
+ */
+function build(
+  resolveToken: (portalKey: string) => string = (k) => `tok-${k}`,
+  hubspot: HubSpotClient = new FakeHubSpotClient(),
+) {
   const config = loadConfig(
     new FakeConfigProvider({
       portals: {
@@ -54,7 +63,7 @@ function build() {
     }),
   )
   const registry = new PortalRegistry(config)
-  const client = new FakeHubSpotClient()
+  const client = hubspot
   const idIndex = new PortalIdIndex()
   const audit = new InMemoryAuditLog()
   const plans = new PlanService({
@@ -62,12 +71,12 @@ function build() {
     client,
     idIndex,
     audit,
-    resolveToken: (k) => `tok-${k}`,
+    resolveToken,
     writeMode: 'propose',
   })
-  const reads = new ReadService({ registry, client, idIndex, resolveToken: (k) => `tok-${k}` })
+  const reads = new ReadService({ registry, client, idIndex, resolveToken })
   const server = createMcpServer({ registry, plans, reads, audit })
-  return { server, audit, plans, registry }
+  return { server, audit, plans, registry, client }
 }
 
 type JsonSchema = {
@@ -83,6 +92,16 @@ type JsonSchema = {
  * in `pin`, which take their given value. Enums take their first member, because a
  * credential is never a legal enum value and the point is to reach the code past
  * validation, not to fail at it.
+ *
+ * WHAT IT CANNOT GENERATE, named here so the next reader does not trust it further than
+ * it goes (#184). It aims at VALID arguments, so it only ever reaches a HANDLER, and the
+ * `object` case returns `{}` for a schema with no `properties` — which is exactly the
+ * JSON Schema of `z.record(z.string(), z.string())`, so `draft_plan`'s `properties`
+ * arrives empty. Both limits point at the same uncovered class: arguments zod REJECTS,
+ * where the SDK answers from the issue list and the issue `path` carries the caller's
+ * property names. That class is pinned by hand in the `#184` describe below, not here;
+ * widening this function cannot reach it, because an argument it generates is one that
+ * validates.
  */
 function argsFor(schema: JsonSchema, fill: string, pin: Record<string, unknown>): unknown {
   const walk = (s: JsonSchema, key?: string): unknown => {
@@ -163,6 +182,424 @@ describe('no credential-shaped input is echoed back or written down (#112 7a)', 
     const trail = audit.all().map((e) => JSON.stringify(e))
     const written = trail.filter((line) => line.includes(PAT))
     expect(written, 'these audit lines recorded the credential permanently').toEqual([])
+  }, 60_000)
+
+  /**
+   * SAFETY.md "Token values stay out of results.", the sentence (#206): "Text that you or
+   * the assistant supply is a separate matter: a value shaped like a HubSpot personal
+   * access token or a PEM private key is removed before a result is returned and before an
+   * event is stored, and a secret of some other shape is not recognised."
+   *
+   * Registered in scripts/claims-register.json. The sentence names two SHAPES across two
+   * SURFACES and then states a limit, so all three parts run here: the pass above covers
+   * the PAT shape across every tool and is bound to the heading of the "Errors are cleaned"
+   * bullet's own surface, not to this sentence, and it says nothing about PEM or about what
+   * is NOT recognised.
+   *
+   * The last clause is the load-bearing one and it is a CHARACTERIZATION, so it is asserted
+   * in the positive: a secret of another shape comes back and is stored AS WRITTEN. The
+   * ticket's own list puts `MANYPORTALS_VAULT_KEY` in that class, which is why the bullet
+   * says it out loud. Without this case a redactor that had started blanking everything
+   * would read as the page being faithful.
+   */
+  it('a PAT and a PEM key are removed from the result and the trail; a secret of another shape is not', async () => {
+    const { server, audit } = build()
+    const client = await connect(server)
+    const { privateKey } = generateKeyPairSync('ed25519')
+    const pem = privateKey.export({ type: 'pkcs8', format: 'pem' }) as string
+    const pemBody = pem.split('\n')[1] ?? ''
+    // A bare uuid: the legacy hapikey shape, which the ticket records as unrecognised.
+    // Assembled from parts for the reason the PAT above is.
+    const otherShape = ['0f2e4c6a', '1b3d', '5e7f', '9a0b', 'c1d2e3f4a5b6'].join('-')
+
+    // SURFACE 1 — the result. add_note echoes the compiled operation back.
+    const noteResult = async (body: string): Promise<string> =>
+      JSON.stringify(
+        await client.callTool({
+          name: 'add_note',
+          arguments: { portal: 'PORTAL_A', body } as never,
+        }),
+      )
+    const patResult = await noteResult(PAT)
+    expect(patResult).toContain(REDACTED_IN_TEXT)
+    expect(patResult).not.toContain(PAT)
+
+    expect(pemBody, 'the generated key has no body line, so the PEM case proves nothing').not.toBe(
+      '',
+    )
+    const pemResult = await noteResult(pem)
+    expect(pemResult).toContain(REDACTED_IN_TEXT)
+    expect(pemResult).not.toContain(pemBody)
+
+    // The limit, asserted in the positive.
+    expect(await noteResult(otherShape)).toContain(otherShape)
+
+    // SURFACE 2 — the stored event. A refused draft records its reason, and the reason
+    // quotes the object type the caller chose.
+    const before = audit.all().length
+    for (const value of [PAT, pem, otherShape]) {
+      await client.callTool({
+        name: 'draft_plan',
+        arguments: {
+          portal: 'PORTAL_A',
+          operation: { kind: 'create', objectType: value, properties: {} },
+        } as never,
+      })
+    }
+    const lines = audit
+      .all()
+      .slice(before)
+      .map((e) => JSON.stringify(e))
+    expect(lines, 'no refusal was recorded, so the trail proves nothing').toHaveLength(3)
+    expect(
+      lines.filter((l) => l.includes(PAT) || l.includes(pemBody)),
+      'these stored events kept the credential',
+    ).toEqual([])
+    expect(
+      lines.filter((l) => l.includes(otherShape)),
+      'the unrecognised shape is what the sentence says is stored as written',
+    ).toHaveLength(1)
+  }, 60_000)
+})
+
+/**
+ * The CONFIGURED portal token, which is a different claim from the block above and from
+ * the #184 block below. Caller-supplied text is recognised by SHAPE and the coverage of
+ * that recogniser is one PAT form and one PEM form; a configured token stays out of every
+ * outgoing surface for a STRUCTURAL reason instead — it has one consumer, the Authorization
+ * header — and that is what these two cases assert (#206).
+ */
+describe('a configured portal token reaches no result, no trail line and no error (#206)', () => {
+  /**
+   * Deliberately NOT credential-shaped. With a PAT-shaped token the redactor would strip
+   * it on the way out and these tests would pass by proving the redactor works, rather
+   * than that the value is never placed in an outgoing message at all.
+   */
+  const TOKEN = 'configured-portal-token-value-not-credential-shaped'
+
+  /** Every advertised tool, each called with arguments that reach its handler. */
+  async function everyToolAnswer(client: Client, planId: string): Promise<string[]> {
+    const { tools } = await client.listTools()
+    expect(tools.length).toBeGreaterThan(10) // the property is worthless over an empty list
+    const out: string[] = []
+    for (const tool of tools) {
+      const args = argsFor(tool.inputSchema as JsonSchema, 'zzz', {
+        portalKey: 'PORTAL_A',
+        planId,
+        targetPortal: 'PORTAL_A',
+      })
+      try {
+        out.push(
+          `${tool.name}: ${JSON.stringify(
+            await client.callTool({ name: tool.name, arguments: args as never }),
+          )}`,
+        )
+      } catch (e) {
+        // A protocol-level rejection is still output the caller sees.
+        out.push(`${tool.name}: ${String(e)}`)
+      }
+    }
+    expect(out, 'not every advertised tool was called').toHaveLength(tools.length)
+    return out
+  }
+
+  /**
+   * THE HEADING TEST for SAFETY.md's "Token values stay out of results." (#206).
+   *
+   * Registered in scripts/claims-register.json. The heading quantifies over RESULTS, so
+   * this enumerates the whole tool surface from the list the server itself advertises
+   * rather than sampling a tool: the ticket's verdict on the old wording was
+   * UNPROVABLE-AS-WRITTEN, and a sampled test is exactly how an unprovable sentence reads
+   * as proven.
+   *
+   * The control is that the token was IN PLAY. The fake records the token each call went
+   * out under, so a run in which the value never reached the HubSpot boundary — a fixture
+   * that resolved some other token, or reads that never happened — fails here instead of
+   * reporting a clean surface it never exercised.
+   *
+   * The complementary surfaces, the trail and error messages, are the next sentence and
+   * have their own case below.
+   */
+  it('no result from any registered tool carries the configured portal token', async () => {
+    const hubspot = new FakeHubSpotClient()
+    const { server, plans } = build(() => TOKEN, hubspot)
+    const client = await connect(server)
+    const plan = plans.draft({
+      portalKey: 'PORTAL_A',
+      operation: { kind: 'create', objectType: 'notes', properties: { hs_note_body: 'hi' } },
+    })
+    const answers = await everyToolAnswer(client, plan.id)
+
+    expect(
+      hubspot.calls.some((c) => c.token === TOKEN),
+      'the configured token never reached the HubSpot boundary, so nothing was exercised',
+    ).toBe(true)
+    expect(
+      answers.filter((a) => a.includes(TOKEN)).map((a) => a.slice(0, a.indexOf(':'))),
+      'these tool results carried the configured portal token',
+    ).toEqual([])
+  }, 60_000)
+
+  /**
+   * SAFETY.md "Token values stay out of results.", the sentence (#206): "Your configured
+   * tokens are never placed in a tool result, in the audit log, or in an error message."
+   *
+   * Registered in scripts/claims-register.json. Three surfaces, and the heading above pins
+   * the first one on the ordinary path. This one pins the two the heading does not name,
+   * under the condition that actually puts a token on them: a HubSpot client that FAILS
+   * with the token in its message. A raw `Error`, not a `SafeError`, so the genericizer is
+   * what has to answer.
+   *
+   * The hostile client is proven hostile FIRST. Its message is asserted to carry the token
+   * when called directly, so the empty offender lists afterwards are a measurement rather
+   * than an artefact of a client that was never carrying anything (#124). The generic
+   * message is required to have reached the caller for the same reason: it is the evidence
+   * that the error path was entered at all.
+   */
+  it('neither the trail nor an error message carries it, even when HubSpot fails with the token', async () => {
+    const hostile = new Proxy({} as HubSpotClient, {
+      get:
+        () =>
+        (ctx: { token: string }): never => {
+          throw new Error(`upstream rejected Authorization: Bearer ${ctx.token}`)
+        },
+    })
+    let direct = ''
+    try {
+      await hostile.getAccountInfo({ token: TOKEN, apiHost: 'api.hubapi.com' })
+    } catch (e) {
+      direct = String(e)
+    }
+    expect(direct, 'the hostile client does not carry the token, so this proves nothing').toContain(
+      TOKEN,
+    )
+
+    const { server, audit, plans } = build(() => TOKEN, hostile)
+    const client = await connect(server)
+    const plan = plans.draft({
+      portalKey: 'PORTAL_A',
+      operation: { kind: 'create', objectType: 'notes', properties: { hs_note_body: 'hi' } },
+    })
+    plans.validate(plan.id)
+    const answers = await everyToolAnswer(client, plan.id)
+
+    expect(
+      answers.filter((a) => a.includes('an internal error occurred')).length,
+      'no tool answered with the generic message, so the error path was never entered',
+    ).toBeGreaterThan(0)
+    expect(
+      answers.filter((a) => a.includes(TOKEN)).map((a) => a.slice(0, a.indexOf(':'))),
+      'these error messages carried the configured portal token',
+    ).toEqual([])
+
+    const trail = audit.all().map((e) => JSON.stringify(e))
+    expect(trail.length, 'nothing was recorded, so the trail proves nothing').toBeGreaterThan(0)
+    expect(
+      trail.filter((line) => line.includes(TOKEN)),
+      'these trail lines recorded the configured portal token',
+    ).toEqual([])
+  }, 60_000)
+})
+
+/**
+ * PINNED, because the generated pass above CANNOT REACH this input class (#184).
+ *
+ * That pass is still the right shape for everything it reaches, and it reaches only
+ * HANDLERS. `argsFor` builds VALID arguments on purpose, so every call it makes gets past
+ * zod and into a handler, where `ok`/`fail` redact. A call zod REJECTS never reaches a
+ * handler at all: the bundled SDK answers that one itself, out of the zod issue list, and
+ * an issue's `path` carries the caller's own property NAMES.
+ *
+ * And the blind spot is total rather than partial. `argsFor` returns `{}` for an `object`
+ * schema with no `properties`, which is exactly the JSON Schema of
+ * `z.record(z.string(), z.string())` — `draft_plan`'s `properties`. The one input class
+ * that walks past the chokepoint is the one class the generator emits as an empty object,
+ * so that pass could never have gone red here however many tools it grew to cover. A
+ * guard that cannot fail over a whole input class reads green forever (#113, #124), which
+ * is why these cases are written out by hand instead of derived from a schema.
+ *
+ * MEASURED against the unfixed code on 2026-10-05 and recorded per case below: the first
+ * four came back carrying the credential verbatim in `content[0].text`, the rest did not.
+ * The rest are kept and labelled rather than dropped — zod v4 reports an issue's `path`
+ * but not the received VALUE, so a type mismatch on a tool whose inputs are all named
+ * fields has nothing to leak today. They are the regression surface for the day one of
+ * those tools grows a record-shaped input, or the error text starts echoing the input.
+ * The labels are not prose: the second test below asserts them.
+ */
+describe('a call rejected before dispatch is redacted too (#184)', () => {
+  /** [what it is, tool name, arguments, whether it carried the credential before the fix] */
+  const REJECTED: Array<[string, string, unknown, 'leaked' | 'clean']> = [
+    [
+      'a credential-shaped property name whose value is a number',
+      'draft_plan',
+      {
+        portal: 'PORTAL_A',
+        operation: { kind: 'create', objectType: 'notes', properties: { [PAT]: 5 } },
+      },
+      'leaked',
+    ],
+    [
+      'a credential-shaped property name whose value is null',
+      'draft_plan',
+      {
+        portal: 'PORTAL_A',
+        operation: { kind: 'create', objectType: 'notes', properties: { [PAT]: null } },
+      },
+      'leaked',
+    ],
+    [
+      'a credential-shaped property name on the update branch of the union',
+      'draft_plan',
+      {
+        portal: 'PORTAL_A',
+        operation: {
+          kind: 'update',
+          objectType: 'deals',
+          objectId: '1',
+          properties: { [PAT]: true },
+        },
+      },
+      'leaked',
+    ],
+    // Not a schema rejection at all: the SDK answers an unknown tool with its own
+    // `Tool <name> not found`, interpolating the name as given.
+    ['a credential-shaped tool NAME', PAT, {}, 'leaked'],
+    [
+      'get_record: a type-mismatched objectId, keyed by the credential',
+      'get_record',
+      { portal: 'PORTAL_A', objectType: 'contacts', objectId: { [PAT]: 1 } },
+      'clean',
+    ],
+    [
+      'search_records: a type-mismatched filter value, keyed by the credential',
+      'search_records',
+      {
+        portal: 'PORTAL_A',
+        objectType: 'contacts',
+        filters: [{ propertyName: 'x', operator: 'EQ', value: { [PAT]: 1 } }],
+      },
+      'clean',
+    ],
+    [
+      'recent_activity: the credential where a number belongs',
+      'recent_activity',
+      { portal: 'PORTAL_A', limit: PAT },
+      'clean',
+    ],
+    [
+      'set_default_read_portal: the credential as a portal key',
+      'set_default_read_portal',
+      { portal: PAT },
+      'clean',
+    ],
+    // The PROTOCOL error path, and the reason the redaction sits at the transport rather
+    // than on tool results: arguments that are not an object fail the request schema, so
+    // this is answered as a JSON-RPC ERROR and never becomes a CallToolResult at all. A
+    // hook on tool results would not see it.
+    ['get_record: the arguments are not an object at all', 'get_record', PAT, 'clean'],
+  ]
+
+  async function callEach(): Promise<{
+    audited: number
+    calls: Array<{ label: string; expected: 'leaked' | 'clean'; text: string }>
+  }> {
+    const { server, audit } = build()
+    const client = await connect(server)
+    const before = audit.all().length
+    const calls: Array<{ label: string; expected: 'leaked' | 'clean'; text: string }> = []
+    for (const [label, name, args, expected] of REJECTED) {
+      let text: string
+      try {
+        text = JSON.stringify(await client.callTool({ name, arguments: args as never }))
+      } catch (e) {
+        // A protocol-level rejection is thrown at the client rather than returned as a
+        // result. It is still output the assistant sees, so it counts here.
+        text = String(e)
+      }
+      calls.push({ label, expected, text })
+    }
+    return { audited: audit.all().length - before, calls }
+  }
+
+  it('no rejected call echoes the credential back', async () => {
+    const { calls } = await callEach()
+    expect(
+      calls.filter((c) => c.text.includes(PAT)).map((c) => c.label),
+      'these rejected calls echoed the credential back to the assistant',
+    ).toEqual([])
+  }, 60_000)
+
+  // The labels above are a MEASUREMENT, so they are checked rather than trusted. A case
+  // marked clean that starts carrying a credential shows up here as a redaction nobody
+  // recorded, which is the prompt to re-measure — and a fix that stops redacting shows up
+  // as a `leaked` case with no placeholder left in it.
+  it('redacts exactly the cases recorded as leaking, and no others', async () => {
+    const { calls } = await callEach()
+    expect(
+      calls.filter((c) => c.text.includes(REDACTED_IN_TEXT)).map((c) => c.label),
+      'the per-case measurement in this list no longer matches what the server does',
+    ).toEqual(calls.filter((c) => c.expected === 'leaked').map((c) => c.label))
+  }, 60_000)
+
+  // The other half of the #184 fix, and the easier half to get wrong: redacting the way
+  // OUT must not start writing anything DOWN. The decision that a schema-rejected call
+  // goes unrecorded is pinned below ('does NOT record a call the schema rejected'); this
+  // extends it from one call to the whole list.
+  it('records none of them, whatever it had to redact', async () => {
+    const { audited } = await callEach()
+    expect(audited, 'a rejected call was written to the append-only trail').toBe(0)
+  }, 60_000)
+
+  /**
+   * THE COST OF AN OUTER NET, paid rather than ignored.
+   *
+   * The transport pass covers the same property as `ok`/`fail` and sits further out, so
+   * an end-to-end call can no longer tell a working `fail` from one that stopped
+   * redacting: the net catches it either way. The guard register said exactly that on the
+   * day the net landed — `mcp/credential-shapes-never-returned` reported THE GUARD CANNOT
+   * FAIL, with the three-pass property test green under its mutation. A layer nobody can
+   * observe is a layer nobody can prove, and the honest repair is to observe it, not to
+   * delete it and not to shrink the net back around it.
+   *
+   * So this watches the handler's own output, by wrapping `send` AFTER `connect`. By then
+   * `transport.send` IS the redacting wrapper, so a wrapper installed on top of it runs
+   * FIRST and sees what the handler produced before the net has touched it. Both layers
+   * are then provable separately, which is the same reasoning as the two audit sinks
+   * having an entry each: one layer forgetting is exactly what a single shared proof
+   * hides.
+   */
+  it('the handler chokepoint still redacts on its own, under the net', async () => {
+    const { server } = build()
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    const client = new Client({ name: 'credential-echo', version: '0' })
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
+
+    const beforeTheNet: string[] = []
+    const net = serverTransport.send.bind(serverTransport)
+    serverTransport.send = async (message, options) => {
+      beforeTheNet.push(JSON.stringify(message))
+      await net(message, options)
+    }
+
+    // An object type that is not allow-listed, so the refusal interpolates the caller's
+    // own word: `object type "<objectType>" is not allowed`, which is the #112 7a shape
+    // and reaches the client through `fail`.
+    await client.callTool({
+      name: 'draft_plan',
+      arguments: {
+        portal: 'PORTAL_A',
+        operation: { kind: 'create', objectType: PAT, properties: { hs_note_body: 'hi' } },
+      } as never,
+    })
+
+    expect(
+      beforeTheNet.length,
+      'nothing was captured, so this test proves nothing',
+    ).toBeGreaterThan(0)
+    expect(
+      beforeTheNet.filter((m) => m.includes(PAT)),
+      'the handler built a message carrying the credential and only the transport net stopped it',
+    ).toEqual([])
   }, 60_000)
 })
 

@@ -228,3 +228,94 @@ export function assertNoContamination(
     )
   }
 }
+
+/**
+ * A write property whose VALUE the id-index attributes to a DIFFERENT portal —
+ * the suspected-reference tier beneath the enumerated ids above.
+ */
+export interface SuspectedCrossPortalRef {
+  property: string
+  value: string
+  owners: string[]
+}
+
+/**
+ * Property VALUES a write to `targetPortal` carries that the id-index attributes to
+ * another portal.
+ *
+ * `findContamination`'s input sees the update target and the association ids and nothing
+ * else, so an id copied into a property value was never looked at: a read on PORTAL_B
+ * teaches the index that id "123456789" is B's, and a later PORTAL_A create with
+ * `linked_deal_id: "123456789"` reported `referencedIds: []` and executed. The
+ * attribution was already in hand via `foreignOwners`; no caller asked the field
+ * carrying it.
+ *
+ * WHOLE-VALUE comparison, and that is the load-bearing choice. A substring scan would
+ * flag every note body that happens to quote an id, and prose quoting an id is not a
+ * reference — in `apply` a false positive refuses a legitimate write, so the cost of
+ * over-matching is paid by the operator. There is no length or plausibility filter
+ * either: what makes a value suspect is the attribution the index ALREADY holds, never
+ * the shape of the string.
+ */
+export function findSuspectedPropertyRefs(
+  index: PortalIdIndex,
+  targetPortal: string,
+  properties: Readonly<Record<string, string>>,
+): SuspectedCrossPortalRef[] {
+  // Pick up the other copies' attributions FIRST (#24), in the same place and for the
+  // same reason as `findContamination`. Freshness is a property of this function rather
+  // than of where its callers sit: this used to be pure, and was correct only because
+  // both call sites happened to follow a contamination check that had refreshed —
+  // recorded in a comment and enforced by nothing, failing OPEN when either moved
+  // (#176). The second refresh in one validate costs a store read from the consumed
+  // offset, which finds nothing new.
+  index.refresh()
+  const hits: SuspectedCrossPortalRef[] = []
+  for (const [property, value] of Object.entries(properties)) {
+    // Skipped for the same reason findContamination skips it: an id the TARGET portal
+    // also owns is legitimately a target id, and the fact that some other portal
+    // happens to use the same integer says nothing. This tier scans arbitrary property
+    // values rather than an enumerated reference set, so it is MORE exposed to that
+    // coincidence than the tier above, not less. Omitting this would have made the
+    // heuristic layer stricter than the precise one, which is backwards.
+    if (index.isKnownFor(targetPortal, value)) continue
+    const owners = index.foreignOwners(targetPortal, value)
+    if (owners.length > 0) hits.push({ property, value, owners })
+  }
+  return hits
+}
+
+/**
+ * The ONE wording for this condition: which properties, which values, whose ids they
+ * are — never a token or a full payload. Exported because `validate` reports the
+ * finding as a validation ISSUE rather than a throw, so the assert below cannot be its
+ * only reader. Composing the wording at each call site instead is structurally how the
+ * two sites were able to diverge (#178), which is what made the #174 defect expressible.
+ */
+export function describeSuspectedRefs(refs: readonly SuspectedCrossPortalRef[]): string {
+  const detail = refs
+    .map((r) => `${r.property}="${r.value}" (belongs to ${r.owners.join(', ')})`)
+    .join('; ')
+  return `${refs.length > 1 ? 'properties' : 'a property'} whose value is an id owned by another portal: ${detail}`
+}
+
+/**
+ * Throw `SafetyError` if any suspected ref remains to refuse, naming the property, the
+ * value and the owning portal(s) (no tokens, no secrets) — the peer of
+ * `assertNoContamination`, and the single owner of the refusal sentence. `trailing` is
+ * the caller's remediation clause, because in `propose` the refusal has to say why it
+ * arrives after an approval (#174).
+ *
+ * Takes the refs rather than finding them, which is the one place this pair does NOT
+ * mirror its neighbour: `findSuspectedPropertyRefs` returns every hit, and which of
+ * them is still refusable depends on the write mode and on the list the operator was
+ * shown at approval. Both are plan state, so that filtering stays in `src/plans`.
+ */
+export function assertNoSuspectedPropertyRefs(
+  targetPortal: string,
+  refs: readonly SuspectedCrossPortalRef[],
+  trailing = '',
+): void {
+  if (refs.length === 0) return
+  throw new SafetyError(`write to "${targetPortal}" sets ${describeSuspectedRefs(refs)}${trailing}`)
+}

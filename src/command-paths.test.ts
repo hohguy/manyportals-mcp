@@ -85,8 +85,70 @@ describe('command-paths can fail (#121)', () => {
     })
     const r = check(d)
     expect(r.rc).toBe(1)
+    // Two assertions, two different kinds of string, and only one of them may spell a
+    // separator (#215).
+    //
+    // The COMMAND is echoed back from the fixture this test wrote, so its spelling is
+    // ours and `scripts/publish-sync.sh` is correct on every platform.
+    //
+    // The FILE PATH is one the script DISCOVERED by walking the tree, so it carries
+    // native separators. Spelling it read `.github/workflows/ci.yml` and failed on
+    // Windows at `.github\workflows\ci.yml` while the script was behaving correctly.
+    //
+    // The rule that tells the two apart, and the reason the three sibling assertions in
+    // this file are fine as written: assert the spelling of a path the TEST supplied;
+    // BUILD the expectation for a path the SCRIPT constructed.
     expect(r.out).toContain('scripts/publish-sync.sh')
-    expect(r.out).toContain('.github/workflows/ci.yml')
+    expect(r.out).toContain(join('.github', 'workflows', 'ci.yml'))
+    rmSync(d, { recursive: true, force: true })
+  })
+
+  it('CATCHES A FILE-VALUED with: INPUT NAMING A FILE THE TREE DOES NOT HOLD', () => {
+    // A `with:` input can name a repository file — `node-version-file: .node-version` is
+    // the first one here — and the check read only `run:` bodies, so a shipped workflow
+    // naming an unshipped file reported CLEAN. Found while adding `.node-version` for
+    // #236, which is the same defect this file exists to prevent arriving through a door
+    // it did not watch. PATH_RE would not have matched it either: it only recognises
+    // script extensions.
+    const d = tree({
+      '.github/workflows/ci.yml': workflow(
+        '      - uses: actions/setup-node@v5\n        with:\n          node-version-file: .node-version\n      - run: bash scripts/build.sh\n',
+      ),
+      'scripts/build.sh': 'echo built\n',
+    })
+    const r = check(d)
+    expect(r.rc).toBe(1)
+    expect(r.out).toMatch(/names \.node-version as a file input, which is not in this tree/)
+    rmSync(d, { recursive: true, force: true })
+  })
+
+  it('accepts a file-valued input whose file IS present', () => {
+    // The control for the case above.
+    const d = tree({
+      '.github/workflows/ci.yml': workflow(
+        '      - uses: actions/setup-node@v5\n        with:\n          node-version-file: .node-version\n      - run: bash scripts/build.sh\n',
+      ),
+      'scripts/build.sh': 'echo built\n',
+      '.node-version': '24\n',
+    })
+    const r = check(d)
+    expect(r.rc).toBe(0)
+    // Non-vacuity: the extractor saw it rather than finding nothing to check.
+    expect(r.out).toMatch(/and [1-9]\d* file input\(s\)/)
+    rmSync(d, { recursive: true, force: true })
+  })
+
+  it('does not treat an expression as a path it can check', () => {
+    // `node-version-file: ${{ inputs.x }}` resolves at run time and cannot be checked from
+    // here. Refusing it would be a false positive on a legitimate workflow.
+    const d = tree({
+      '.github/workflows/ci.yml': workflow(
+        '      - uses: actions/setup-node@v5\n        with:\n          node-version-file: ${{ inputs.whichever }}\n      - run: bash scripts/build.sh\n',
+      ),
+      'scripts/build.sh': 'echo built\n',
+    })
+    const r = check(d)
+    expect(r.rc).toBe(0)
     rmSync(d, { recursive: true, force: true })
   })
 

@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "manyportals-mcp",
   "display_name": "ManyPortals",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "One AI assistant. Many HubSpot portals. Every write names its portal.",
   "long_description": "Work with one or more HubSpot portals without their data crossing. Requests go directly to HubSpot's API, with no intermediary service and no tracking of its own. The checks cover routing and record IDs, not the text inside records. Read the safety model before you connect a portal whose content you do not control.",
   "author": {

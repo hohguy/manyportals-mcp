@@ -85,6 +85,67 @@ describe('HttpHubSpotClient — request construction (verified shinzo shapes)', 
     expect(calls[0]?.url).toBe('https://api.hubapi.com/account-info/v3/details')
     expect(info.portalId).toBe(343)
   })
+
+  /**
+   * SAFETY.md "Token values stay out of results.", the sentence (#206): "They are sent only
+   * as the authorization header of a HubSpot request."
+   *
+   * Registered in scripts/claims-register.json. "Only" is the word under test, and it
+   * quantifies over every request this client makes, so this enumerates all eight methods
+   * rather than sampling one: the tests above each pin one method's URL and verb, and the
+   * sentence is about a property of the whole surface.
+   *
+   * Three places a token could travel are checked per request — the URL, the body, and any
+   * header that is not `Authorization` — and the Authorization header is asserted to carry
+   * it. That last assertion is the non-vacuity control: a request whose token went
+   * somewhere else entirely, or a fixture that never passed one, would otherwise leave the
+   * three "not present" checks passing over nothing.
+   */
+  it('the token goes only into the Authorization header, on every request this client makes', async () => {
+    // Not credential-SHAPED on purpose. With a PAT-shaped value a redactor somewhere in
+    // the chain could remove it and this test would pass by proving the redactor works,
+    // rather than that the value is only ever put in one place.
+    const token = 'portal-token-value-under-test'
+    const here: PortalContext = { token, apiHost: 'api.hubapi.com' }
+    const { fn, calls } = mockFetch(
+      () =>
+        json({
+          id: '1',
+          properties: {},
+          portalId: 7,
+          total: 0,
+          results: [],
+          inputs: [],
+        }),
+      // one responder for all of them; each method's own shape is pinned above
+    )
+    const c = new HttpHubSpotClient(fn)
+    await c.getAccountInfo(here)
+    await c.getObject(here, 'contacts', '1')
+    await c.searchObjects(here, 'contacts', { limit: 1 })
+    await c.getPipelines(here, 'deals')
+    await c.getProperties(here, 'deals')
+    await c.createObject(here, 'notes', { hs_note_body: 'hi' })
+    await c.updateObject(here, 'deals', '1', { amount: '1' })
+    await c.createDefaultAssociation(here, 'notes', '1', 'contacts', '2')
+
+    expect(calls, 'not every client method issued a request, so this proves nothing').toHaveLength(
+      8,
+    )
+    for (const { url, init } of calls) {
+      const headers = (init?.headers ?? {}) as Record<string, string>
+      expect(headers.Authorization, `${url} did not carry the token`).toBe(`Bearer ${token}`)
+      expect(url, 'the token reached the URL').not.toContain(token)
+      expect(String(init?.body ?? ''), 'the token reached the request body').not.toContain(token)
+      expect(
+        Object.entries(headers)
+          .filter(([name]) => name !== 'Authorization')
+          .filter(([, value]) => value.includes(token))
+          .map(([name]) => name),
+        'the token reached another header',
+      ).toEqual([])
+    }
+  })
 })
 
 describe('HttpHubSpotClient — sanitized errors (no token / body leakage)', () => {

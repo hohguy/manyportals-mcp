@@ -209,7 +209,22 @@ describe.skipIf(process.platform === 'win32')(
  * A number read from `numFailedTests` in a structured report cannot be forged by a thrown
  * string, which is why the replacement below drives the FAULTS rather than the parse.
  */
-describe('a mutant cannot forge a result (#124)', () => {
+/**
+ * SKIPPED on Windows (#215), where `guard-register.mjs` declines to run at all:
+ * "SKIPPED on Windows — POSIX maintainer tooling (#96). The mutations are proven on the
+ * Linux and macOS legs." It exits 0, so this case's `rc === 1` could never hold, and it
+ * was the one case in this file not covered by that platform gate while eight siblings
+ * were.
+ *
+ * Worth saying plainly, because the irony invites a wrong fix: a harness that exits 0
+ * having proven nothing is the exact shape #124 forbids. The difference is that this one
+ * SAYS SO. An honest declared skip and a silent false pass are not the same failure, and
+ * the skip is honest only because `verify` on Windows is not what any release reads —
+ * #212's gate requires a green Linux or macOS run for the release commit. Do not
+ * "harden" the Windows path by making it exit non-zero: that breaks every Windows run to
+ * restate something already stated.
+ */
+describe.skipIf(process.platform === 'win32')('a mutant cannot forge a result (#124)', () => {
   it(
     'refuses a mutant that throws text shaped like a summary during import',
     () => {

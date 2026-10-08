@@ -89,7 +89,19 @@ function publicTree(
   // ignored-file case asserts is the operator's real situation: a clean checkout.
   execFileSync(
     'git',
-    ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', 'fixture'],
+    // -c commit.gpgsign=false for the same reason as publish-sync.test.ts's fixture
+    // (#182): global config signs through 1Password, and a locked vault would fail this.
+    [
+      '-c',
+      'user.email=t@example.com',
+      '-c',
+      'user.name=t',
+      '-c',
+      'commit.gpgsign=false',
+      'commit',
+      '-qm',
+      'fixture',
+    ],
     { cwd: d, stdio: 'ignore' },
   )
   return d

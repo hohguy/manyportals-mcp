@@ -1,7 +1,8 @@
 name: Audit
 
-# Scheduled supply-chain alarm: fails when a HIGH or CRITICAL advisory affects a
-# production dependency (the tree that ships in the npm package and the .mcpb).
+# Scheduled supply-chain alarm. Two tiers: a HIGH or CRITICAL advisory against a
+# PRODUCTION dependency fails (the tree that ships in the npm package and the .mcpb),
+# and a CRITICAL against ANY dependency fails, dev tooling included (#237).
 # Push/PR CI cannot catch this while the repo is idle — advisories are published
 # upstream with no commit here. Local mirror: `npm run audit:prod` (same command).
 # Deliberately NOT part of `npm run verify`: it reads the live advisory database,
@@ -16,12 +17,26 @@ permissions:
 
 jobs:
   audit:
-    runs-on: ubuntu-latest
+    # Pinned, not `ubuntu-latest` (#119) — see the reasoning in ci.yml's verify matrix.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: 24
+          # The repository's development default, rather than a number repeated here. A
+          # second copy of it is a second thing to forget (#236).
+          node-version-file: .node-version
           cache: npm
       - run: npm ci
       - run: npm run audit:prod
+      # TWO TIERS, and the dev tier is deliberately the looser one (#237). A HIGH in a build
+      # tool is not this project's threat: an event-loop DoS in a Markdown or source-map
+      # library fed committed files inside a gate has no attacker. A CRITICAL anywhere is
+      # worth stopping for, because the realistic supply-chain event is a malicious publish
+      # and that does not respect the prod/dev boundary.
+      #
+      # "All dependencies at high" is the setting this is NOT, and that is measured rather
+      # than assumed: it is red today over source-map-js, and a weekly job that is red for a
+      # reason nobody intends to act on is the one that gets switched off. Same attrition
+      # argument as release-gate.sh --anyway.
+      - run: npm run audit:all

@@ -29,6 +29,6 @@ Two sample files to copy and edit:
 
 The samples contain placeholders only: `PORTAL_A` and `PORTAL_B` for portal keys, `Example Co` for labels, `123456789` for a hub ID, and `pat-...` for tokens. Replace all of them before use.
 
-Portal keys are yours to invent. Any short string that tells your portals apart will do, such as `ACME` or `eu-ops`, and you then use that exact string in tool calls.
+Portal keys are yours to invent, within one rule: a key starts with a letter or a digit, and the rest may contain letters, digits, `_` and `-`. Any script is accepted. Spaces and other punctuation are not, so `PORTAL A` is rejected and `PORTAL_A` is accepted. `ACME` and `eu-ops` are both valid. You then use that exact string in tool calls, and keys are case-sensitive.
 
 Keep the finished files out of version control. Tokens are credentials, and labels and hub IDs identify the businesses you work with.

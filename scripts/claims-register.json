@@ -1,0 +1,530 @@
+{
+  "_": "The claims register (#94). Each bullet's segments must REJOIN to its line in the doc byte-for-byte, so a sentence cannot be added, reworded or dropped without someone deciding what it claims. See scripts/claims-register.mjs for the clauses.",
+  "exemptBaseline": 7,
+  "bullets": [
+    {
+      "doc": "docs/SAFETY.md",
+      "section": "What it protects",
+      "heading": "Every write names its portal.",
+      "segments": [
+        {
+          "kind": "claim",
+          "text": "- **Every write names its portal.**",
+          "test": "src/mcp/mcp.test.ts",
+          "expect": "every write-drafting tool requires a portal, by its own schema",
+          "why": "The HEADING, and it is universal, so its test enumerates the write-drafting surface instead of sampling one tool. A bold heading is read alone, so it carries its own test or it gets reworded."
+        },
+        {
+          "kind": "claim",
+          "text": " A write must state its target portal.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "refuses an empty portal key",
+          "why": "Enforced below the MCP schema too: the service refuses an empty or whitespace key even if the schema is bypassed."
+        },
+        {
+          "kind": "claim",
+          "text": " A selected or default portal does not stand in for one.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "a selected default portal does not stand in for a write",
+          "why": "No test existed for this sentence before #200. The test asserts the fallback EXISTS before showing it is not used, or it would prove nothing."
+        }
+      ]
+    },
+    {
+      "doc": "docs/SAFETY.md",
+      "section": "What it protects",
+      "heading": "A startup check catches a swapped token wherever you set a hub ID.",
+      "segments": [
+        {
+          "kind": "claim",
+          "text": "- **A startup check catches a swapped token wherever you set a hub ID.**",
+          "test": "src/boot/boot.test.ts",
+          "expect": "catches a swap in every position where a hub id is configured",
+          "why": "The HEADING, reworded on #202 so that it CAN carry a test: the old one could not, because a swap between two portals that both leave the hub id unknown is not caught. \"Wherever\" is a quantifier, so the test enumerates every swap position in which at least one portal has a hub id configured, rather than swapping the first two portals. The unswapped baseline runs first, so a BootError thrown for an unrelated reason cannot read as the guard working."
+        },
+        {
+          "kind": "claim",
+          "text": " When the server starts, it confirms that each token reports the hub ID you configured.",
+          "test": "src/index.test.ts",
+          "expect": "asks every configured token for its own hub id while starting, before serving",
+          "why": "Two words carry this sentence and one test covers both: \"each\" is an enumeration, so three portals are configured and all three tokens must be consulted, and \"when the server starts\" is an ordering, asserted by recording any consultation that happens after the transport is serving and requiring that list to stay empty. The CONSEQUENCE of a token answering with another hub id is the next sentence and is bound to its own test; one test for both would leave a reader unable to say which it proves."
+        },
+        {
+          "kind": "claim",
+          "text": " A mislabelled or swapped token stops the server from starting, as does a token the server cannot check at all.",
+          "test": "src/index.test.ts",
+          "expect": "startup is refused for a mislabelled token and for one it cannot check at all",
+          "why": "The second half is the understatement #202 recorded: the page promised a refusal only for a token that answers wrongly, while a token that cannot answer at all is refused too. Both cases are enumerated, and the assertion is the one the sentence makes — that the server never begins SERVING, not merely that the guard throws, which boot.test.ts pins separately. The third way a token cannot be checked, a timeout, is proven at the unit level in boot.test.ts because startServer takes no timeout override and its default is 10s."
+        },
+        {
+          "kind": "claim",
+          "text": " A read-only portal whose hub ID you leave unknown skips this check, so two portals in that state could have their tokens swapped without the server noticing.",
+          "test": "src/boot/boot.test.ts",
+          "expect": "two read-only portals that both leave the hub id unknown can swap tokens unnoticed",
+          "why": "The carve-out, and the reason the heading says \"wherever you set a hub ID\". The test leaves the fake client UNSEEDED, so a check that ran at all would raise: not throwing is then evidence of the skip rather than evidence of a pass, and the client having recorded no call says the same from the other side."
+        },
+        {
+          "kind": "exempt",
+          "text": " Set a hub ID wherever you can.",
+          "why": "An instruction to the operator. It asserts nothing about the software: it is the remedy for the carve-out the sentence before it discloses."
+        }
+      ]
+    },
+    {
+      "doc": "docs/SAFETY.md",
+      "section": "What it protects",
+      "heading": "A cross-portal check runs before writes.",
+      "segments": [
+        {
+          "kind": "claim",
+          "text": "- **A cross-portal check runs before writes.**",
+          "test": "src/plans/plans.test.ts",
+          "expect": "the check runs before the write: at either gate HubSpot is never called",
+          "why": "The HEADING, and \"before writes\" is the whole of it, so the test asserts what HubSpot SAW rather than what the plan's status became: a refusal that arrived after the write went out would satisfy a status assertion and falsify the sentence. Both gates are exercised, because the attribution can already be in the index at validate or land between validate and execute, and the heading covers both arrivals. The write-ahead `attempt` line is checked too, since a write is recorded before it is sent, so its absence is the trail agreeing nothing was sent."
+        },
+        {
+          "kind": "claim",
+          "text": " The server records the ID of each record it returns to the assistant, against the portal it came from, and refuses a write that reuses an ID it has recorded against a different portal.",
+          "test": "src/mcp/mcp.test.ts",
+          "expect": "records every id it returns against the portal it came from, and refuses a write reusing one",
+          "why": "The sentence spans both halves of the mechanism, the read that RECORDS and the plan that is judged, so the test does too — which is why it lives in mcp.test.ts, the one place a single id index is wired into both services. \"Each record it returns\" covers both read shapes, so one id comes back from get_record and two from a search, and each of the three is then reused in a write to another portal and refused. Seeding a record is asserted NOT to attribute it, so the attribution is the read's doing."
+        },
+        {
+          "kind": "claim",
+          "text": " It is an extra layer rather than a guarantee, and it has limits you should know.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "is an extra layer: with nothing recorded it judges nothing, and routing still sends the write to the portal it named",
+          "why": "The bound test proves the FIRST clause, from the direction that makes it true: with nothing recorded the check contributes nothing at all, and the write still reaches exactly the portal it named, because routing is the layer underneath and is what actually keeps portals apart. A reader who mistook this check for the guarantee would think an empty index meant an unprotected write. The second clause is a forward reference to the four sentences after it, each registered here with a test of its own; the register does not and cannot claim that list COMPLETE, which is why #203 removed \"it has two limits\" — no test proves an enumeration exhaustive."
+        },
+        {
+          "kind": "claim",
+          "text": " It judges only IDs it has recorded.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "judges only recorded ids: an id live in another portal but never read goes through"
+        },
+        {
+          "kind": "claim",
+          "text": " `summarize_pipeline` also records one record ID from each stage that is not empty, without returning it, so an ID you were never shown can still be judged.",
+          "test": "src/reads/reads.test.ts",
+          "expect": "records one sampled record id per non-empty stage without returning it"
+        },
+        {
+          "kind": "claim",
+          "text": " It compares what it has RECORDED, not what exists in HubSpot: a record that is live in both portals but has been read in only one of them counts as belonging to that one, and a write naming it in the other portal is refused rather than allowed.",
+          "test": "src/mcp/mcp.test.ts",
+          "expect": "compares what it recorded, not HubSpot: a record live in both portals but read in one is refused in the other",
+          "why": "The sentence #203 corrected in the WORSE direction: the page described this case as \"not flagged\" when the write is in fact refused. The test makes the same id live in both portals and reads it in one, taking the liveness straight off the client so that \"live\" and \"recorded\" stay distinguishable — a read through the tool would have recorded it and destroyed the case."
+        },
+        {
+          "kind": "claim",
+          "text": " If that happens, read the record in the portal you are writing to, then draft again.",
+          "test": "src/mcp/mcp.test.ts",
+          "expect": "the remedy works: reading the record in the target portal lets the next draft through",
+          "why": "An instruction, but one that ASSERTS the remedy works, and #203 is on this ticket because the remedy the page used to give did not: inspect_plan_target cannot run on a plan the precise tier has already invalidated. So the test performs the remedy and shows the next draft validates, and also shows the refused plan stays refused — which is why the instruction says draft AGAIN rather than retry."
+        },
+        {
+          "kind": "claim",
+          "text": " An ID that appears inside a property VALUE of a record you read is not recorded, so copying such a value into another portal is not caught here.",
+          "test": "src/mcp/mcp.test.ts",
+          "expect": "an id inside a property value of a record you read is not recorded, so copying it is not caught",
+          "why": "A CHARACTERIZATION of the gap #185 tracks, so the test asserts the gap rather than its absence: the value is shown reaching the assistant, the record's own id is shown attributed while the id inside the value is not, and the write copying it into another portal passes. The attributed own id is what keeps this from passing because the recorder never ran."
+        },
+        {
+          "kind": "claim",
+          "text": " The server does check the values you write into fields: if a value is exactly an ID it has recorded against another portal, the write is refused in `apply` mode, while in `propose` mode the plan reports it before you approve and the write is allowed to go ahead.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "a value that is exactly a foreign id is refused in apply, and reported but allowed in propose",
+          "why": "One sentence, two modes, so one test covers both. The summary sentence used to promise a refusal in both, and #203's correction is that `propose` REPORTS the finding and lets the write go ahead; unit tests pin each half separately, and binding the sentence to either alone would read as proven while the mode a reader is most likely running stayed unexamined. \"Before you approve\" is asserted by reading the finding off the validated plan with approve called afterwards, and \"allowed to go ahead\" by the execute that follows."
+        },
+        {
+          "kind": "exempt",
+          "text": " See the limits below.",
+          "why": "A cross-reference. It asserts nothing, and the section it points at is unregistered prose outside this claim surface — the same classification as the audit-log pointer in the \"Writes are logged.\" bullet."
+        }
+      ]
+    },
+    {
+      "doc": "docs/SAFETY.md",
+      "section": "What it protects",
+      "heading": "Each portal has a default-deny policy.",
+      "segments": [
+        {
+          "kind": "claim",
+          "text": "- **Each portal has a default-deny policy.**",
+          "test": "src/plans/plans.test.ts",
+          "expect": "every portal carries its own allow-lists, and a portal with none can write nothing",
+          "why": "The HEADING, and two words in it needed a test the existing single-portal fixtures could not give. \"EACH portal\" means the policy is held per portal, so three are configured and the same two object types are written at every one: PORTAL_A permits notes and refuses deals while PORTAL_B does the opposite. \"DEFAULT-deny\" is the third portal, writable with no allow-lists at all, which can write nothing. The grid is asserted whole, so a policy that refused everything would fail too."
+        },
+        {
+          "kind": "claim",
+          "text": " A write is refused unless its object type and operation are on that portal's allow-lists, and an association's target object type has to be on the allow-list too.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "a write is refused unless its object type, its operation and its association targets are allow-listed",
+          "why": "Three gates in one sentence, so one test exercises all three against one policy. Three unit tests each pin a single gate and binding the sentence to any one of them would read as if the sentence were covered while two thirds of it went unproven. The association clause is the half #189 added, and the half a reader would most want: allowedObjects now bounds what a write can TOUCH, not only what it creates. The permitted case is listed first because it is what makes the three refusals evidence."
+        },
+        {
+          "kind": "claim",
+          "text": " In `apply` mode, only the object types you list in `applyAllowedObjects` run without a manual approval.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "apply still requires approval for an object NOT blessed for apply",
+          "why": "The load-bearing word is \"only\", so the test bound here is the one at the boundary: notes is writable and allow-listed but absent from applyAllowedObjects, and it stops at approval. The next sentence quantifies the same rule over the whole complement and has its own test."
+        },
+        {
+          "kind": "claim",
+          "text": " Everything else still needs one.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "in apply mode every object type outside applyAllowedObjects still needs an approval",
+          "why": "\"Everything else\" is the COMPLEMENT of applyAllowedObjects, so the test enumerates it rather than sampling it: every object type the portal may write, minus the blessed one, and each still stops at approval. A complement of one is the case a reader cannot generalise from, which is why this is not bound to the sentence above it. The refusal is matched on its reason, not on the fact that something threw."
+        },
+        {
+          "kind": "claim",
+          "text": " Some properties are refused outright whatever your allow-lists say: `hubspot_owner_id`, `hubspot_team_id`, `hs_all_owner_ids`, `hs_all_team_ids` and `hs_created_by_user_id`, and the reserved stage fields `dealstage`, `hs_pipeline` and `hs_pipeline_stage` wherever they do not belong to the object type being written.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "each named owner, team and misplaced stage property is refused whatever the allow-lists say",
+          "why": "The sentence names EIGHT properties and a condition, so all eight run against one policy that allow-lists every object type and both operations, which is what \"whatever your allow-lists say\" means. The condition is the half #186 changed: the page used to carve out deals and tickets, and the gate was then stricter on the types it cannot verify than on the two it can. The test's last two cases are a control rather than decoration — a gate that denied every reserved name on every type would satisfy the refusals and break the preflight path a type's OWN stage property is meant to take."
+        },
+        {
+          "kind": "claim",
+          "text": " Those names are matched as written, so an owner or pipeline property of your own under another name is not recognised.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "an owner or pipeline property under another name is not recognised, so it is not refused",
+          "why": "The sentence #205 asked for, because the page described this gate in schema-aware language (\"owner and team assignment fields\") and a reader with a custom owner field believed they were covered. It is a CHARACTERIZATION of a real limit, so the test asserts that such writes pass validate, with the same assignment under its HubSpot name as the control: without that control, a gate that had stopped denying anything at all would read as this limit being faithfully documented."
+        },
+        {
+          "kind": "claim",
+          "text": " Check such a write yourself before you approve it, and note that in `apply` mode for an allow-listed object type there is no approval step at which to check it.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "apply auto-executes an object that IS blessed for apply",
+          "why": "The first clause is an instruction and asserts nothing; the second is a fact about the software and is what the bound test proves — a blessed object type in apply mode goes from validate to executed with no approval in between, so there is indeed no step at which the operator could apply the instruction. Kept as ONE claim rather than split into an exemption plus a claim, because the segment does assert something and `exempt` means asserts nothing."
+        },
+        {
+          "kind": "exempt",
+          "text": " Assign owners in HubSpot directly.",
+          "why": "An instruction to the operator, and the remedy for the two sentences before it. It asserts nothing about the software."
+        }
+      ]
+    },
+    {
+      "doc": "docs/SAFETY.md",
+      "section": "What it protects",
+      "heading": "Errors are cleaned before you see them.",
+      "segments": [
+        {
+          "kind": "claim",
+          "text": "- **Errors are cleaned before you see them.**",
+          "test": "src/mcp/credential-echo.test.ts",
+          "expect": "no rejected call echoes the credential back",
+          "why": "The HEADING, and its proof here is deliberately the HARDER half: an error this server did NOT write is still cleaned before the assistant sees it. That is verified at the TRANSPORT boundary, which is the lesson #207 carries for this register — an external review checked our code correctly and the leak was one level out, in the bundled SDK, so our sanitization perimeter is not the process perimeter. The complementary half, that an error raised inside a tool is replaced by a message this server wrote, is the next claim and has its own test. The limit is real and is stated in the token bullet rather than here: only two credential shapes are recognised."
+        },
+        {
+          "kind": "claim",
+          "text": " Every error raised while a tool is running is replaced by a message this server wrote, and an unexpected one becomes a generic message that carries no response body and no token.",
+          "test": "src/mcp/mcp.test.ts",
+          "expect": "every tool replaces a raw error with our own message, carrying no body and no token",
+          "why": "\"Every\" is the word under test, so the test drives a RAW (non-SafeError) throw through every registered tool rather than one of them, and checks its argument table against the advertised tool list so a tool added tomorrow fails the test instead of being skipped by it. The thrown message carries both things the sentence says do not come back, a response body and a credential, and the assertion is equality with the generic string, which is the strong form: anything that reached the caller from the throw, redacted or not, is a different string."
+        },
+        {
+          "kind": "claim",
+          "text": " A call that does not match a tool's input schema is refused by the protocol layer before the tool runs, and that refusal quotes the argument names you sent.",
+          "test": "src/mcp/mcp.test.ts",
+          "expect": "a schema-mismatched call is refused before the tool runs, quoting the argument names sent",
+          "why": "The sentence the page used to get wrong in the OTHER direction: it claimed only this server's own messages reach the assistant, while the bundled SDK answers a schema rejection out of the zod issue list, where an issue path carries the caller's own property names. So the test asserts the quoting rather than denying it, with two caller-chosen property names so \"names\" is plural. \"Before the tool runs\" is asserted as an audit delta of zero: draft records an event whether it succeeds or is refused, so a handler that ran would leave a line behind."
+        }
+      ]
+    },
+    {
+      "doc": "docs/SAFETY.md",
+      "section": "What it protects",
+      "heading": "Writes are logged.",
+      "segments": [
+        {
+          "kind": "claim",
+          "text": "- **Writes are logged.**",
+          "test": "src/plans/plans.test.ts",
+          "expect": "records a durable `attempt` BEFORE the write",
+          "why": "The heading, bound to the ORDERING rather than to the refusal below it, so each sentence has its own proof. The complementary structural fact, that the audited path is the ONLY mutation path, is bullet 2's heading claim and is registered there; binding one test to two different sentences would leave a reader unable to tell which it proves."
+        },
+        {
+          "kind": "claim",
+          "text": " A write is recorded before it is sent, and the server refuses the write if that line cannot be stored, so a write that reached HubSpot always left a trace.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "FAILS CLOSED (no HubSpot write) if the audit sink cannot record the attempt",
+          "why": "The load-bearing half is the REFUSAL, not the ordering: it is what makes the trace unconditional. Proven by a sink that throws on the attempt, asserting zero objects created."
+        },
+        {
+          "kind": "claim",
+          "text": " The line recording the outcome is written afterwards and is best effort: if it cannot be stored, the log shows the attempt with no outcome after it.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "a write that SUCCEEDED is not recorded as failed when its outcome line cannot be stored (#183)",
+          "why": "Publishable only since #183. Before that the log could show a write as FAILED when it succeeded, so this sentence would have been false in the more dangerous direction."
+        },
+        {
+          "kind": "exempt",
+          "text": " Either way, check HubSpot.",
+          "why": "An instruction to the operator. It asserts nothing about the software."
+        },
+        {
+          "kind": "exempt",
+          "text": " The audit log section below has the detail.",
+          "why": "A cross-reference. It asserts nothing, and the section it names is itself unregistered prose outside the claim surface."
+        }
+      ]
+    },
+    {
+      "doc": "docs/SAFETY.md",
+      "section": "What it protects",
+      "heading": "Token values stay out of results.",
+      "segments": [
+        {
+          "kind": "claim",
+          "text": "- **Token values stay out of results.**",
+          "test": "src/mcp/credential-echo.test.ts",
+          "expect": "no result from any registered tool carries the configured portal token",
+          "why": "The HEADING, and the audit's verdict on the old wording was UNPROVABLE-AS-WRITTEN because it quantified over every value that is a token while the redactor recognises one PAT shape and one PEM shape. It is provable in the reading the sentences under it now make explicit — the CONFIGURED portal token, which stays out for a structural reason rather than by being scrubbed — and it quantifies over RESULTS, so the test enumerates the whole tool surface from the list the server advertises. The sentinel token is deliberately NOT credential-shaped: with a PAT-shaped value the redactor would strip it on the way out and the test would pass by proving the redactor works. The control is that the token was IN PLAY, read off the calls the HubSpot boundary recorded."
+        },
+        {
+          "kind": "claim",
+          "text": " Tokens are read when the server starts and kept in memory for the life of the process.",
+          "test": "src/index.test.ts",
+          "expect": "reads the vault and the plain token file while building the sources, then answers from memory",
+          "why": "The REPLACEMENT for the sentence the audit found FALSE, \"a token is read when a call is made\": the vault is decrypted whole at startup, the plaintext file parsed whole, and the boot guard resolves every portal's token before deciding whether to check it. Both directions of the replacement are asserted, against the real files rather than hand-built sources: the values survive both files being deleted, which is what \"kept in memory\" means, and a second set of sources built after the deletion finds NOTHING, which is the control that places the read at the build rather than at the call. A lazy reader that happened to have cached would look identical without it."
+        },
+        {
+          "kind": "claim",
+          "text": " They are sent only as the authorization header of a HubSpot request.",
+          "test": "src/hubspot/http.test.ts",
+          "expect": "the token goes only into the Authorization header, on every request this client makes",
+          "why": "\"Only\" is the word under test and it quantifies over every request this client makes, so the test enumerates all eight methods rather than sampling one; the request-construction tests beside it each pin one method's URL and verb. Three places a token could travel are checked per request — the URL, the body, and any header that is not `Authorization` — and the Authorization header is asserted to CARRY it, which is the non-vacuity control: a fixture that never passed a token would otherwise leave three absence checks passing over nothing."
+        },
+        {
+          "kind": "claim",
+          "text": " Your configured tokens are never placed in a tool result, in the audit log, or in an error message.",
+          "test": "src/mcp/credential-echo.test.ts",
+          "expect": "neither the trail nor an error message carries it, even when HubSpot fails with the token",
+          "why": "Three surfaces. The heading claim pins RESULTS on the ordinary path, and this test pins the two the heading does not name, under the condition that actually puts a token on them: a HubSpot client that FAILS with the token in its message, raising a raw `Error` so the genericizer is what has to answer. The hostile client is proven hostile FIRST, by calling it directly and asserting its message carries the token, and the generic message is required to have reached the caller — so the empty offender lists are a measurement rather than an artefact of a client that was never carrying anything (#124). A PARTIAL binding for the result surface, which the heading claim carries."
+        },
+        {
+          "kind": "claim",
+          "text": " Text that you or the assistant supply is a separate matter: a value shaped like a HubSpot personal access token or a PEM private key is removed before a result is returned and before an event is stored, and a secret of some other shape is not recognised.",
+          "test": "src/mcp/credential-echo.test.ts",
+          "expect": "a PAT and a PEM key are removed from the result and the trail; a secret of another shape is not",
+          "why": "Two SHAPES across two SURFACES and then a limit, so all three parts run in one test. The pre-existing three-pass test covers the PAT shape across every tool and says nothing about PEM or about what is not recognised. The last clause is the load-bearing one and is a CHARACTERIZATION, so it is asserted in the positive: a secret of another shape comes back and is stored AS WRITTEN. The audit put `MANYPORTALS_VAULT_KEY` itself in that class, which is why the bullet says it out loud, and without the case a redactor that had started blanking everything would read as the page being faithful."
+        },
+        {
+          "kind": "claim",
+          "text": " At rest, you can keep tokens in an encrypted vault rather than a plain file.",
+          "test": "src/config/vault.test.ts",
+          "expect": "a vault alone resolves every portal, and at rest holds none of those tokens",
+          "why": "Two halves, so both run: the vault is a COMPLETE token store, with every portal resolving from it and nothing in the plaintext position at all, and at rest the stored bytes hold none of those values. The EMPTY file source is the point of the first half — the precedence test beside it keeps a populated file behind the vault, so it cannot distinguish \"the vault answered\" from \"the vault answered first\", and \"rather than a plain file\" is a claim about running without one."
+        },
+        {
+          "kind": "claim",
+          "text": " A plain token file is still read if one is present, so delete it once its contents are in the vault.",
+          "test": "src/index.test.ts",
+          "expect": "a plain token file is still read when the vault is active",
+          "why": "#198's correction. The page said the vault was used \"instead of\" the plain file, which described operator discipline as enforcement: setting a passphrase does not disable the plaintext file. So the test asserts the thing the sentence warns about, through the real startup path — with the vault ACTIVE and answering for its own portal, a portal present only in the plaintext file still resolves from it. The vault answering in the same call is the control, ruling out a run where the vault was inactive and the file was the only source there was."
+        },
+        {
+          "kind": "claim",
+          "text": " The vault is only as private as its passphrase.",
+          "test": "src/config/vault.test.ts",
+          "expect": "the passphrase is the only secret the envelope needs, and the only thing that opens it",
+          "why": "The audit's verdict on this one was TRUE and \"exactly right\": no machine binding, no keychain. \"Only\" cuts both ways and both halves run — the passphrase ALONE opens a STORED envelope, and nothing else opens it, a padded or recased one included, because nothing normalizes it. Read back through a file reader rather than from the value the encrypt call just returned, since the sentence is about a vault at rest that someone else may be holding: the inputs to the open have to be the stored bytes and the one string, and nothing more."
+        },
+        {
+          "kind": "exempt",
+          "text": " Your MCP client holds that passphrase, and how it stores and displays it is the client's doing rather than this server's.",
+          "why": "A scoping statement. It says where responsibility for the passphrase ends, and asserts nothing about this server that a test could bind — the sentences that DO assert something about it are the two beside it."
+        },
+        {
+          "kind": "claim",
+          "text": " ManyPortals declares the field sensitive.",
+          "test": "src/bundle.test.ts",
+          "expect": "declares the vault passphrase field sensitive in the manifest"
+        },
+        {
+          "kind": "observed",
+          "text": " The Claude Desktop extension showed it in plain text when this was checked on 2026-09-15 and showed it masked on 2026-10-06, so check the client and version you are running rather than relying on either observation.",
+          "what": "Claude Desktop MASKS the vault passphrase on the connector settings screen. The same value was observed in plain text on 2026-09-15, so the behaviour changed between those dates. The field is declared \"sensitive\": true in manifest.json; whether that is what changed it is not decidable from this repository.",
+          "client": "Claude Desktop",
+          "clientVersion": "2.26454.0 (macOS)",
+          "date": "2026-10-06",
+          "recheckBy": "2027-01-06",
+          "recheck": "Open the connector's settings in the client you use and look at the vault passphrase field. This is another vendor's interface and it has already changed once in three weeks, so treat any single observation as perishable.",
+          "why": "An assertion about a third-party application, which no test here can make. Re-dated on 2026-10-06 after the behaviour CHANGED: the earlier observation had become false, and the published sentence with it. That is exactly what this segment kind exists to surface, and it surfaced on its first real test."
+        }
+      ]
+    },
+    {
+      "doc": "docs/SAFETY.md",
+      "section": "What it protects",
+      "heading": "There is no direct write tool.",
+      "segments": [
+        {
+          "kind": "claim",
+          "text": "- **There is no direct write tool.**",
+          "test": "src/mcp/mcp.test.ts",
+          "expect": "exactly one registered tool reaches a HubSpot write: execute_plan",
+          "why": "The heading, and it is universal, so the test enumerates the whole registered surface rather than sampling. Only execute_plan reaches a mutating HubSpot method."
+        },
+        {
+          "kind": "claim",
+          "text": " Every change is drafted as a plan and goes through `draft → validate → execute`, with an `inspect_plan_target` step in between whenever the write touches an existing record or sets a pipeline or stage.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "every change runs draft then validate then execute, and the inspection gates both conditions the page names",
+          "why": "Both conditions the sentence names for the inspection step are exercised, not just one."
+        },
+        {
+          "kind": "claim",
+          "text": " In `propose` mode an `approve_plan` step sits before `execute`.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "blocks execute until approved, then executes",
+          "why": "The propose-mode half, proven by execute refusing before approval."
+        },
+        {
+          "kind": "claim",
+          "text": " In `apply` mode that step is replaced, for the object types you list, by the standing allow-list described under default-deny below.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "in apply mode the approval step is replaced for a listed object type and kept for the rest",
+          "why": "Replaced for a listed object type and KEPT for the rest, which is the whole content of the sentence."
+        },
+        {
+          "kind": "claim",
+          "text": " The lifecycle steps are recorded.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "each lifecycle step the page names leaves its own line in the trail",
+          "why": "Deliberately narrowed from the old wording, which said every step. #194 and #199 are the steps it does not cover."
+        },
+        {
+          "kind": "claim",
+          "text": " Nothing requires the target to be inspected before you approve, only before the write runs, so the approval phrase can be asked for on a plan whose target has not been read yet.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "approve accepts a plan whose target was never read, and execute is where that is refused",
+          "why": "The approve-time gap. This bullet and #204 each prove it from a different angle, approve order here and the tool surface there."
+        },
+        {
+          "kind": "claim",
+          "text": " The assistant issues each of these calls, including `approve_plan`.",
+          "test": "src/mcp/mcp.test.ts",
+          "expect": "every lifecycle step is a tool the assistant calls, approve_plan included",
+          "why": "Including approve_plan, which is why the ceremony is not a human control on its own (#222)."
+        },
+        {
+          "kind": "observed",
+          "text": " Whether anything stops it committing a change on its own depends on your client being set to ask before it runs the steps",
+          "what": "Claude Desktop groups this server's 18 tools by the annotations it registers them with, as 7 read-only, 2 write/delete and 9 other, under the connector's Tool permissions, and offers allow, ask or deny per group AND per tool. The Write/delete group holds exactly approve_plan and execute_plan. In the installation observed, all three groups were set to Always allow, which is why a full draft-to-approve run produced no prompt at all.",
+          "date": "2026-10-06",
+          "recheck": "Open the connector's Tool permissions in the client you use and look at the Write/delete group. Whether a client reads these annotations at all is the client's doing: the MCP specification makes them hints.",
+          "why": "A statement about a third-party MCP client. Split MID-SENTENCE on purpose: this half is the client's behaviour and cannot be tested here, while the relative clause after it is ours and is a claim.",
+          "client": "Claude Desktop",
+          "clientVersion": "2.26454.0 (macOS)",
+          "recheckBy": "2027-01-06"
+        },
+        {
+          "kind": "claim",
+          "text": " marked destructive.",
+          "test": "src/mcp/mcp.test.ts",
+          "expect": "approve_plan and execute_plan are the steps marked destructive",
+          "why": "The provable half of the sentence above. Asserted as the WHOLE destructiveHint set, so a third tool gaining it or either losing it fails."
+        },
+        {
+          "kind": "exempt",
+          "text": " Set it to ask; always-allow removes the last human step.",
+          "why": "An instruction to the reader, not an assertion. It is the action the observation beside it makes necessary."
+        }
+      ]
+    },
+    {
+      "doc": "docs/SAFETY.md",
+      "section": "What it protects",
+      "heading": "Updates can be read back against the target portal before they run.",
+      "segments": [
+        {
+          "kind": "claim",
+          "text": "- **Updates can be read back against the target portal before they run.**",
+          "test": "src/plans/plans.test.ts",
+          "expect": "the read-back reaches the named portal and happens before the write",
+          "why": "The heading asserts both the destination and the ordering, so the test asserts both."
+        },
+        {
+          "kind": "claim",
+          "text": " `inspect_plan_target` reads the target record in the portal you named and shows a short summary, so you can confirm it is the right record in the right portal.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "the inspection reads the target in the target portal and attaches a screened summary"
+        },
+        {
+          "kind": "claim",
+          "text": " If the record is not there, it is flagged.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "flags a target NOT found in the target portal and refuses execute without acceptMissingTargets (propose)",
+          "why": "Flagged means specifically a 404; any other status aborts the preflight and fails closed."
+        },
+        {
+          "kind": "claim",
+          "text": " If the portal's `blockedProperties` hide the fields that would identify the record, the summary can come back holding little more than the ID you supplied, so read what it returns rather than that it returned.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "blockedProperties can reduce the summary to the id the caller supplied",
+          "why": "#188 is the fix; this sentence is the disclosure while it is open."
+        },
+        {
+          "kind": "claim",
+          "text": " It is required before executing a write that touches an existing record, and for a write that sets a pipeline or stage it cannot be waived.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "the read is required for a write that touches an existing record, and cannot be waived for one that sets a stage",
+          "why": "The non-waivable half became true at #186, which closed the gate inversion."
+        },
+        {
+          "kind": "claim",
+          "text": " Nothing requires it before approval, so you can be asked for the approval phrase on a plan whose target has not been read.",
+          "test": "src/mcp/mcp.test.ts",
+          "expect": "show_plan hands over the approval phrase for a plan whose target has not been read",
+          "why": "The approve-time gap from the tool surface. Its peer is in the no-direct-write-tool bullet."
+        },
+        {
+          "kind": "claim",
+          "text": " For other writes `execute_plan` accepts `skipInspection` and `acceptMissingTargets`.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "for other writes both execute arguments are accepted, each waiving its own gate"
+        },
+        {
+          "kind": "claim",
+          "text": " Read those carefully: they are arguments on the execute call, so the ASSISTANT supplies them rather than you, and it can do so on a plan you have already approved.",
+          "test": "src/mcp/mcp.test.ts",
+          "expect": "the two waivers are arguments on execute_plan alone, and work on a plan already approved",
+          "why": "No config field and no operator-side switch exists for either, which is why the remedy is client-side."
+        },
+        {
+          "kind": "claim",
+          "text": " In `apply` mode, for the object types you list, both arguments are ignored.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "in apply mode both execute arguments are ignored for a listed object type",
+          "why": "This sentence exists because the page was SCARIER than the code without it."
+        },
+        {
+          "kind": "claim",
+          "text": " A waiver is recorded when the write goes ahead; if the write is refused for some other reason, the attempt to waive it is not recorded.",
+          "test": "src/plans/plans.test.ts",
+          "expect": "a waiver is recorded when the write goes ahead, and not when the execute is refused for another reason",
+          "why": "The asymmetry is #191. The sentence states it rather than promising it away."
+        },
+        {
+          "kind": "observed",
+          "text": " Only a gate on `execute_plan` in your client prevents it, and that gate is yours to set.",
+          "what": "Claude Desktop groups this server's 18 tools by the annotations it registers them with, as 7 read-only, 2 write/delete and 9 other, under the connector's Tool permissions, and offers allow, ask or deny per group AND per tool. The Write/delete group holds exactly approve_plan and execute_plan. In the installation observed, all three groups were set to Always allow, which is why a full draft-to-approve run produced no prompt at all.",
+          "date": "2026-10-06",
+          "recheck": "Open the connector's Tool permissions in the client you use and look at the Write/delete group. Whether a client reads these annotations at all is the client's doing: the MCP specification makes them hints.",
+          "why": "A statement about a third-party MCP client. The two halves this project can stand behind are claims in this bullet already: the waivers are arguments on execute_plan with no operator-side switch, and execute_plan is the only tool reaching a write, so gating it is sufficient. That a client CAN gate it is the observation.",
+          "client": "Claude Desktop",
+          "clientVersion": "2.26454.0 (macOS)",
+          "recheckBy": "2027-01-06"
+        }
+      ]
+    }
+  ],
+  "pendingBaseline": 0,
+  "pending": [],
+  "_pending": "A pending bullet's claims are real and not yet PROVEN; an exempt segment asserts nothing. Pending may only shrink, and each entry names the ticket that will clear it.",
+  "observedBaseline": 3,
+  "_observed": "An `observed` segment asserts what a THIRD-PARTY application does. It carries what was observed, the ISO date, and how to re-check it, because no test here can watch someone else's software and `exempt` would be a lie. Ratcheted like exempt; the dates print on every run because such an observation ages silently.",
+  "_doc": "Document paths are PUBLIC-RELATIVE. The assembler lifts public/** to the root of the published repository, so a dev-relative path here fails the assembly while passing every local run (#132)."
+}

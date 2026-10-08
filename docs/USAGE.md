@@ -4,7 +4,7 @@ This guide explains how to install ManyPortals, set up your portals, and connect
 
 ManyPortals is a Model Context Protocol (MCP) server. It lets one AI assistant work with several HubSpot portals at once, and routes every write to the portal you name. Writes to a portal go through the same steps: `draft → validate → approve → execute`, with a target inspection in between whenever the write touches an existing record. In `apply` mode the approve step is replaced for object types you choose.
 
-> **Before real writes.** The first calls to live HubSpot happen at a portal check you run yourself. Until that passes on your portals, do not use it to write to real data. See [SAFETY](SAFETY.md).
+> **Before real writes.** Run the portal check yourself. Until it passes on your portals, do not use ManyPortals to write to real data. Starting the server checks token identity before that, for each portal that has a hub ID configured: it asks HubSpot which account the token belongs to, and reads no records. A portal left without a hub ID is skipped and not checked. See [SAFETY](SAFETY.md).
 
 ## What you provide
 
@@ -38,7 +38,7 @@ Notes, tasks, calls, meetings, and emails all run through the `contacts` scopes,
 
 > **Do not select every scope.** HubSpot's list includes scopes for products your account may not have, and asking for one of those can make creation fail with a generic error. Grant only the object types you will use.
 
-> **Do not select "sensitive" or "highly sensitive" scopes.** ManyPortals never asks HubSpot for sensitive data. They only add risk if the key is ever exposed.
+> **Do not select "sensitive" or "highly sensitive" scopes.** ManyPortals gives HubSpot's sensitive-marked fields no special treatment, so a key holding one of these scopes can read those values through the ordinary read tools. Leaving them out is what keeps those values out of reach.
 
 ### If you already use a private app
 
@@ -130,7 +130,7 @@ printf 'passphrase: '; read -rs MP_KEY; echo
 MANYPORTALS_VAULT_KEY="$MP_KEY" node dist/index.js vault status; unset MP_KEY
 ```
 
-At runtime, set `MANYPORTALS_VAULT_KEY` to the passphrase in the server's environment. With the Claude Desktop extension, you enter it in the extension's **Vault passphrase** setting instead. **Claude Desktop's Local MCP servers screen shows that passphrase in plain text**, so do not take screenshots of that screen or share it. Anyone who sees the passphrase and can also read your vault file can unlock every token in it.
+At runtime, set `MANYPORTALS_VAULT_KEY` to the passphrase in the server's environment. With the Claude Desktop extension, you enter it in the extension's **Vault passphrase** setting instead. **Treat Claude Desktop's Local MCP servers screen as sensitive**, and do not take screenshots of it or share it. That screen showed the passphrase in plain text when this was checked on 2026-09-15, and showed it masked on 2026-10-06 on version 2.26454.0 for macOS, so check the client and version you are running rather than relying on either observation. Masking the field on screen does not change the environment-variable exposure described in [SECURITY](../SECURITY.md). Anyone who sees the passphrase and can also read your vault file can unlock every token in it.
 
 Once `vault status` succeeds, delete the plain `tokens.json`. The encrypt step leaves it in place on purpose. You can override the vault path with `MANYPORTALS_VAULT_FILE`. A wrong passphrase fails at startup, and nothing falls back to another source without telling you.
 
@@ -206,7 +206,7 @@ node dist/index.js doctor      # checks your setup, makes no HubSpot calls
 node dist/index.js check-portals   # live read-only checks per portal, required before real use
 ```
 
-`doctor` checks your Node version, that the config is valid, the list of portals, the write modes, and whether each token is present. It never reads or prints the token value. It exits with an error if anything is wrong, so run it before you connect.
+`doctor` checks your Node version, that the config is valid, the list of portals, the write modes, and whether each token is present. To report that last part it reads your local credential sources, and unlocks the vault if you use one, so the passphrase has to be available. It does not print a token value and it makes no call to HubSpot. It exits with an error if anything is wrong, so run it before you connect.
 
 > [!NOTE]
 > Two different things share that word. `check-portals` is a command you run in a terminal, and it checks every configured portal. `inspect_plan_target` is a tool the assistant calls on a single write plan, to read that plan's target record before you approve it.
@@ -217,29 +217,29 @@ node dist/index.js check-portals   # live read-only checks per portal, required 
 
 Reads may use the selected default portal, and the result always names the portal that was read. A write always names its portal explicitly.
 
-| Tool                                                                      | Kind               | Portal                          | What it does                                                                                   |
-| ------------------------------------------------------------------------- | ------------------ | ------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `list_portals`                                                            | read               | not needed                      | The configured portals, with no secrets, and the selected default                              |
-| `set_default_read_portal`                                                 | read               | sets the default                | Sets the selected default portal, used for reads only                                          |
-| `get_record`                                                              | read               | explicit or default             | One record by object type and ID                                                               |
-| `search_records`                                                          | read               | explicit or default             | Search with filters: property name, operator, value                                            |
-| `recent_activity`                                                         | read               | explicit or default             | Most recently changed records across one or more object types                                  |
-| `summarize_pipeline`                                                      | read               | explicit or default             | Counts per stage of a deal or ticket pipeline, with no record contents                         |
-| `draft_plan`                                                              | starts a write     | explicit, always                | Starts a plan. The object type and operation must be allowed for that portal                   |
-| `add_note`, `create_task`, `log_call`, `log_meeting`, `update_deal_stage` | starts a write     | explicit, always                | Shortcuts that build a plan and enter the same steps as `draft_plan`                           |
-| `validate_plan`                                                           | continues a write  | from the plan                   | Runs the blocked-property and cross-portal checks                                              |
-| `inspect_plan_target`                                                     | continues a write  | from the plan                   | Reads the target record in the target portal and shows a short summary                         |
-| `show_plan`                                                               | continues a write  | from the plan                   | Shows a plan, including the exact approval phrase                                              |
-| `approve_plan`                                                            | continues a write  | from the plan                   | Approves with the exact phrase `approve plan <planId> for <portalKey>`                         |
-| `execute_plan`                                                            | performs the write | from the plan                   | Runs the plan. Options: `skipInspection`, `acceptMissingTargets`                               |
-| `get_audit_log`                                                           | read               | `portal`, or `allPortals: true` | Reads the audit log. With neither, it uses the selected portal, and errors if none is selected |
+| Tool                                                                      | Kind               | Portal                          | What it does                                                                                                     |
+| ------------------------------------------------------------------------- | ------------------ | ------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `list_portals`                                                            | read               | not needed                      | The configured portals, with no secrets, and the selected default                                                |
+| `set_default_read_portal`                                                 | read               | sets the default                | Sets the selected default portal, used for reads only                                                            |
+| `get_record`                                                              | read               | explicit or default             | One record by object type and ID                                                                                 |
+| `search_records`                                                          | read               | explicit or default             | Search with filters: property name, operator, value                                                              |
+| `recent_activity`                                                         | read               | explicit or default             | Most recently changed records across one or more object types                                                    |
+| `summarize_pipeline`                                                      | read               | explicit or default             | A stage ID, label and count for each stage of a deal or ticket pipeline, with no record contents                 |
+| `draft_plan`                                                              | starts a write     | explicit, always                | Starts a plan. The object type and operation must be allowed for that portal                                     |
+| `add_note`, `create_task`, `log_call`, `log_meeting`, `update_deal_stage` | starts a write     | explicit, always                | Shortcuts that build a plan and enter the same steps as `draft_plan`                                             |
+| `validate_plan`                                                           | continues a write  | from the plan                   | Runs the blocked-property and cross-portal checks                                                                |
+| `inspect_plan_target`                                                     | continues a write  | from the plan                   | Reads the target record in the target portal and shows a short summary                                           |
+| `show_plan`                                                               | continues a write  | from the plan                   | Shows a plan, including the exact approval phrase                                                                |
+| `approve_plan`                                                            | continues a write  | from the plan                   | Approves with the exact phrase `approve plan <planId> for <portalKey>`                                           |
+| `execute_plan`                                                            | performs the write | from the plan                   | Runs the plan. Options: `skipInspection`, `acceptMissingTargets`                                                 |
+| `get_audit_log`                                                           | read               | `portal`, or `allPortals: true` | Reads the audit log. With neither, it uses the selected portal, and errors if none is selected. Options: `limit` |
 
 Clients are told which tools are safe: the record-reading tools carry the MCP `readOnlyHint` annotation, and `approve_plan` and `execute_plan` carry `destructiveHint`. `set_default_read_portal` carries neither, because it changes which portal later reads default to. If you build an auto-allow rule from these annotations, expect to be asked about any tool that carries neither.
 
 Two tools have a detail you should know before relying on them:
 
 - **`get_record` returns HubSpot's default property set.** That set can leave out the field a write just set, such as the body of a note, so name the fields you care about in `properties`.
-- **`get_audit_log` is not limited.** It returns every recorded event, so it grows long on a system that has been running a while, and faster when one assistant starts the server more than once, because each copy includes the others' records. Ask for a single portal unless you need them all.
+- **`get_audit_log` returns everything unless you ask for less.** Pass `limit` to get only the most recent events. Without it you get every recorded event, so the result grows long on a system that has been running a while, and faster when one assistant starts the server more than once, because each copy includes the others' records. Ask for a single portal unless you need them all.
 
 ## Make a write, step by step
 
@@ -281,7 +281,9 @@ You can change it to `apply`, and doing so is your decision and your risk: it re
 
 ## Sensitive fields
 
-`blockedProperties` refuses to read or write any field whose name matches a pattern you list, per portal. On top of that, ManyPortals never sends HubSpot's sensitive-data flag, so HubSpot does not return the values of properties it has marked sensitive, whatever your config says. This depends on HubSpot enforcing that flag on reads, so confirm it on your own portal before you rely on it for regulated data. See [SAFETY](SAFETY.md).
+`blockedProperties` refuses to read or write any field whose name matches a pattern you list, per portal. It matches the names you supply, so it protects only the fields you name.
+
+What keeps HubSpot's sensitive-marked values away from the assistant is the set of scopes on your key. HubSpot requires a sensitive-data scope before it returns such a value, and its documentation states that a request naming one of those properties fails with a 403 error when the token does not hold that scope. ManyPortals does not read HubSpot's sensitivity marking, so a key that holds the scope can read those values through the ordinary read tools. See [SAFETY](SAFETY.md).
 
 ## Add, change, or remove a portal
 

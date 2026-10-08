@@ -44,13 +44,30 @@ export type PlanLogEvent = AttributedAuditEvent & { n: number }
  * The events are fresh copies; the log's own entries stay frozen, and `detail` is
  * still the frozen original, so nothing here can alter the trail after the fact.
  */
-function asPlanLog(events: readonly AuditEvent[]): {
+function asPlanLog(
+  events: readonly AuditEvent[],
+  limit?: number,
+): {
   events: readonly PlanLogEvent[]
   count: number
 } {
+  // A BOUND, because the caller that reads this most is a model with a context window
+  // (#146). #30 decided to DECLARE the log unbounded rather than cap it, and the
+  // declaration was honest and well written; what it could not change is that "expect the
+  // whole history" moves the cost to the reader, and when the reader is an assistant the
+  // cost lands as silently degraded evidence rather than as an error anyone sees.
+  //
+  // `n` STAYS ABSOLUTE. It is the event's position in the whole log, not in this slice, so
+  // a limit of 3 against 174 events returns n 172, 173, 174 out of count 174 — which says
+  // both that this is a window and WHERE the window sits. An unbounded read is unchanged,
+  // since the offset is then zero.
+  const total = events.length
+  const from = limit === undefined ? 0 : Math.max(0, total - limit)
   return {
-    events: events.map((event, i) => ({ ...attributeToWriter(event), n: i + 1 })),
-    count: events.length,
+    events: events
+      .slice(from)
+      .map((event, i) => ({ ...attributeToWriter(event), n: from + i + 1 })),
+    count: total,
   }
 }
 
@@ -98,7 +115,7 @@ export function createHandlers(deps: McpHandlerDeps) {
     ): Promise<WritePlan> {
       return deps.plans.execute(planId, opts)
     },
-    getPlanLog(opts?: { portalKey?: string; allPortals?: boolean }): {
+    getPlanLog(opts?: { portalKey?: string; allPortals?: boolean; limit?: number }): {
       events: readonly PlanLogEvent[]
       count: number
     } {
@@ -113,14 +130,15 @@ export function createHandlers(deps: McpHandlerDeps) {
       if (portalKey !== undefined && allPortals) {
         throw new SafeError('get_audit_log: pass a portal OR allPortals, not both')
       }
-      if (allPortals) return asPlanLog(deps.auditAll())
+      const limit = opts?.limit
+      if (allPortals) return asPlanLog(deps.auditAll(), limit)
       const key = portalKey ?? deps.registry.getSelected()
       if (key === undefined) {
         throw new SafeError(
           'get_audit_log: no portal given and none selected — name a portal, set a default, or pass allPortals',
         )
       }
-      return asPlanLog(deps.auditForPortal(key))
+      return asPlanLog(deps.auditForPortal(key), limit)
     },
   }
 }

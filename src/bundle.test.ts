@@ -51,6 +51,26 @@ describe('bundle hygiene (R3.E)', () => {
   })
 })
 
+describe('the manifest declares the vault passphrase sensitive', () => {
+  /**
+   * BOUND TO A PUBLISHED SENTENCE (#227). SAFETY.md says "ManyPortals declares the field
+   * sensitive", and that sentence used to sit INSIDE an `observed` segment about Claude
+   * Desktop. It is a claim about this project's own manifest, so it was bound to nothing
+   * while carrying a date and a re-check instruction measured for somebody else's user
+   * interface. Whether a client honours the flag is the client's business and stays
+   * `observed`; whether we SET it is ours and is tested here.
+   */
+  it('declares the vault passphrase field sensitive in the manifest', () => {
+    const manifest = JSON.parse(readFileSync(join(process.cwd(), 'manifest.json'), 'utf8')) as {
+      user_config?: Record<string, { sensitive?: boolean; type?: string }>
+    }
+    const field = manifest.user_config?.vault_key
+    // Non-vacuity: a renamed or removed field must fail here rather than skip the check.
+    expect(field, 'manifest.json has no user_config.vault_key').toBeDefined()
+    expect(field?.sensitive).toBe(true)
+  })
+})
+
 describe('bundle version', () => {
   it('manifest.json and package.json agree', () => {
     // Claude Desktop keys extension installs on the manifest version: bump one

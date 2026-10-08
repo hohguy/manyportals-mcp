@@ -257,6 +257,53 @@ describe('ReadService — summarize_pipeline', () => {
     expect(out.totalCount).toBe(3)
   })
 
+  it('records one sampled record id per non-empty stage without returning it', async () => {
+    // THE CLAIM BEHIND A PUBLISHED SENTENCE (#226). SAFETY.md said "an ID it has never
+    // returned is not judged at all", which this tool falsifies: it records a sampled
+    // record id per non-empty stage and returns none of them, so an id the assistant was
+    // never shown IS judged by the cross-portal check later. The sentence was an
+    // over-correction made while fixing the opposite error, and it is now bound here.
+    const { reads, client, ctx, idIndex } = setup()
+    client.seedPipelines('tok-PORTAL_A', 'deals', [
+      {
+        id: 'default',
+        label: 'Sales Pipeline',
+        stages: [
+          { id: 'new', label: 'New', displayOrder: 0 },
+          { id: 'won', label: 'Won', displayOrder: 1 },
+          { id: 'lost', label: 'Lost', displayOrder: 2 },
+        ],
+      },
+    ])
+    const inNew = await client.createObject(ctx('PORTAL_A'), 'deals', {
+      pipeline: 'default',
+      dealstage: 'new',
+    })
+    const inWon = await client.createObject(ctx('PORTAL_A'), 'deals', {
+      pipeline: 'default',
+      dealstage: 'won',
+    })
+    // 'lost' is left empty on purpose: with no record to sample, nothing is recorded.
+
+    const out = await reads.summarizePipeline({ portalKey: 'PORTAL_A' })
+
+    // HALF ONE — the ids ARE recorded, which is what makes them judgeable later.
+    expect(idIndex.isKnownFor('PORTAL_A', inNew.id)).toBe(true)
+    expect(idIndex.isKnownFor('PORTAL_A', inWon.id)).toBe(true)
+    // Non-vacuity: isKnownFor does not simply answer true.
+    expect(idIndex.isKnownFor('PORTAL_A', '123456789')).toBe(false)
+
+    // HALF TWO — and none of them reached the caller. Asserted STRUCTURALLY rather than
+    // by searching the result for the id: the fake numbers records from 1, and "1" is
+    // also a stage count here, so a substring search would pass by luck on a result that
+    // did leak an id. `toEqual` is exact on keys, so an added field fails this.
+    expect(out.stages).toEqual([
+      { stageId: 'new', label: 'New', count: 1 },
+      { stageId: 'won', label: 'Won', count: 1 },
+      { stageId: 'lost', label: 'Lost', count: 0 },
+    ])
+  })
+
   it('throws when the portal has no deal pipelines', async () => {
     const { reads } = setup()
     await expect(reads.summarizePipeline({ portalKey: 'PORTAL_A' })).rejects.toBeInstanceOf(

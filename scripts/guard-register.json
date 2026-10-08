@@ -13,7 +13,7 @@
     "id": "out-guard/home-ancestor",
     "why": "An ancestor of HOME would be accepted when the repo lives outside HOME.",
     "file": "scripts/out-guard.sh",
-    "find": "  case \"$home/\" in\n    \"$out\"/*) echo \"FATAL: --out is an ANCESTOR of HOME \u2014 refusing (got: $out)\" >&2; return 1 ;;\n  esac\n",
+    "find": "  case \"$home/\" in\n    \"$out\"/*) echo \"FATAL: --out is an ANCESTOR of HOME — refusing (got: $out)\" >&2; return 1 ;;\n  esac\n",
     "replace": "  : # guard removed by guard-register\n",
     "test": "src/out-guard.test.ts",
     "expect": "refuses an ancestor of HOME",
@@ -43,7 +43,7 @@
     "id": "cred-scan-tree/pattern-present",
     "why": "Both halves: with the file-presence AND emptiness checks gone, $CRED is unbound, the command substitution subshell dies, HITS is empty and the scan prints clean (#99).",
     "file": "scripts/cred-scan-tree.sh",
-    "find": "[ -f \"$PATTERN\" ] || {\n  echo \"cred-scan-tree: missing $PATTERN \u2014 cannot verify; failing closed\" >&2; exit 2; }\nsource \"$PATTERN\"\n[ -n \"${CRED:-}\" ] || {\n  echo \"cred-scan-tree: the CRED pattern is empty \u2014 cannot verify; failing closed\" >&2; exit 2; }\n",
+    "find": "[ -f \"$PATTERN\" ] || {\n  echo \"cred-scan-tree: missing $PATTERN — cannot verify; failing closed\" >&2; exit 2; }\nsource \"$PATTERN\"\n[ -n \"${CRED:-}\" ] || {\n  echo \"cred-scan-tree: the CRED pattern is empty — cannot verify; failing closed\" >&2; exit 2; }\n",
     "replace": "source \"$PATTERN\"\n",
     "test": "src/cred-scan-tree.test.ts",
     "expect": "exits 2 when the shared pattern file is",
@@ -53,7 +53,7 @@
     "id": "credscan/pattern-present",
     "why": "Both halves: with the file-presence AND emptiness checks gone, $CRED is unbound, the command substitution subshell dies, HITS is empty and the scan prints clean (#99).",
     "file": "scripts/credscan.sh",
-    "find": "[ -f \"$PATTERN\" ] || {\n  echo \"credscan: missing $PATTERN \u2014 cannot verify; failing closed\" >&2; exit 1; }\nsource \"$PATTERN\"\n[ -n \"${CRED:-}\" ] || {\n  echo \"credscan: the CRED pattern is empty \u2014 cannot verify; failing closed\" >&2; exit 1; }\n",
+    "find": "[ -f \"$PATTERN\" ] || {\n  echo \"credscan: missing $PATTERN — cannot verify; failing closed\" >&2; exit 1; }\nsource \"$PATTERN\"\n[ -n \"${CRED:-}\" ] || {\n  echo \"credscan: the CRED pattern is empty — cannot verify; failing closed\" >&2; exit 1; }\n",
     "replace": "source \"$PATTERN\"\n",
     "test": "src/credscan.test.ts",
     "expect": "exits non-zero when the shared pattern file is missing",
@@ -151,7 +151,7 @@
   },
   {
     "id": "layout/node-reader-does-not-follow-unicode-whitespace",
-    "why": "`.trim()` follows Unicode whitespace, so a BOM and a non-breaking space were accepted here and refused by the shell reader \u2014 the same declaration read two ways (#127).",
+    "why": "`.trim()` follows Unicode whitespace, so a BOM and a non-breaking space were accepted here and refused by the shell reader — the same declaration read two ways (#127).",
     "file": "scripts/layout.mjs",
     "find": "  const value = (raw.startsWith('\\ufeff') ? raw.slice(1) : raw).replace(\n    /^[ \\t\\n\\r\\v\\f]+|[ \\t\\n\\r\\v\\f]+$/g,\n    '',\n  )\n",
     "replace": "  const value = raw.trim()\n",
@@ -331,12 +331,142 @@
   },
   {
     "id": "mcp/credential-shapes-never-returned",
-    "why": "A refusal repeats the value it refused, so a token passed as an argument came straight back to the model (#112 7a).",
+    "why": "A refusal repeats the value it refused, so a token passed as an argument came straight back to the model (#112 7a). RE-AIMED at #184, deliberately and not to make a run pass: the transport net added there covers the same property from further out, so with the net in place the three-pass property test stayed GREEN under this mutation and this entry reported THE GUARD CANNOT FAIL. The named test now watches the handler's own output before the net reaches it, so the inner layer cannot quietly become decoration.",
     "file": "src/mcp/server.ts",
     "find": "  content: [{ type: 'text', text: redactCredentials(publicErrorMessage(e)) }],\n",
     "replace": "  content: [{ type: 'text', text: publicErrorMessage(e) }],\n",
     "test": "src/mcp/credential-echo.test.ts",
-    "expect": "through every registered tool, in three passes",
+    "expect": "the handler chokepoint still redacts on its own",
+    "devOnly": false
+  },
+  {
+    "id": "claims/an-expected-failure-test-cannot-prove-a-claim",
+    "why": "The clause that makes the claims register's central sentence TRUE (#223). Before it, `it.fails('the claim', () => expect(claimIsTrue).toBe(true))` was accepted: vitest records an expected-failure test as status \"passed\" with empty failureMessages, so a test that succeeds PRECISELY WHEN THE CLAIM IS FALSE certified the claim. Mutating the condition to false restores the bypass, and the named case must then fail.",
+    "file": "scripts/claims-register.mjs",
+    "find": "      if (hits[0].fails === true) {\n",
+    "replace": "      if (false) {\n",
+    "test": "src/claims-register.test.ts",
+    "expect": "REFUSES A CLAIM BOUND TO AN EXPECTED-FAILURE TEST",
+    "devOnly": false
+  },
+  {
+    "id": "claims/an-unregistered-bullet-is-refused",
+    "why": "The LOAD-BEARING clause of the claims register (#94). Reconstruction only governs bullets the register already knows about, so without this one a new published safety claim could carry no test and nothing would say so. The register's whole value is that a claim cannot be WRITTEN without someone deciding what proves it; this is the clause that forces the decision.",
+    "file": "scripts/claims-register.mjs",
+    "find": "        bad.push(\n          `${doc}: this bullet is neither registered nor pending: ${line.slice(0, 68)}...\\n` +\n            `      Register it, or add it to \"pending\" with the ticket that will.`,\n        )\n",
+    "replace": "",
+    "test": "src/claims-register.test.ts",
+    "expect": "NEITHER REGISTERED NOR PENDING",
+    "devOnly": false
+  },
+  {
+    "id": "claims/the-governed-section-takes-one-list-and-nothing-else",
+    "why": "Discovery kept lines starting \"- **\" and SKIPPED everything else, so the section's contract held for one Markdown spelling and silently not for the rest (#224). Eleven shapes put visible text under that heading without being discovered: a continuation line, a nested bullet under either indent, a * or + marker, an item shifted one space, an item with no bold opening, an ordered item, a blockquote, a table row and a bare paragraph. Enumerating bad shapes is the wrong fix because Markdown has more spellings than anyone will list, so the allow-list is the fix and this mutation restores the skip.",
+    "file": "scripts/claims-register.mjs",
+    "find": "  const stray = body.find(({ token }) => token.type !== 'list' && token.type !== 'space')",
+    "replace": "  const stray = undefined",
+    "test": "src/claims-register.test.ts",
+    "expect": "REFUSES a bare paragraph",
+    "devOnly": false
+  },
+  {
+    "id": "claims/a-fenced-heading-cannot-redirect-the-gate",
+    "why": "The section was located by line scan, and a line scan cannot tell a heading from a line of prose shaped like one (#234). A fenced example quoting the heading won by coming first, and with a COMPLETE quoted copy every clause passed while reading the code sample: the live bullets were never examined, so the published page could then be falsified with this gate reporting clean. Proven against the real register and the real page before the fix. This mutation matches the heading by its text wherever it appears rather than by its token type, which is the defect itself.",
+    "file": "scripts/claims-register.mjs",
+    "find": "  const at = tokens.findIndex((t) => t.type === 'heading' && t.depth === 2 && t.text === section)",
+    "replace": "  const at = tokens.findIndex((t) => t.raw.includes('## ' + section))",
+    "test": "src/claims-register.test.ts",
+    "expect": "REFUSES, reading the live section rather than the quoted copy",
+    "devOnly": false
+  },
+  {
+    "id": "claims/the-markdown-lexer-must-rejoin-the-document",
+    "why": "Taking a Markdown parser makes this gate's SCOPE, meaning which text must be registered, a function of a third-party version. That is the claims register's own failure mode one level up, and it was the standing objection to taking any dependency here (#224). The answer is that the lexer's token raw values must rejoin the document byte-for-byte before anything is read from them, so an upgrade that stops covering the source REFUSES instead of quietly governing less. It proves coverage and not classification, which is what the allow-list and the eleven fixtures are for. This mutation removes the check.",
+    "file": "scripts/claims-register.mjs",
+    "find": "  if (tokens.map((t) => t.raw).join('') !== text) {",
+    "replace": "  if (false) {",
+    "test": "src/claims-register.test.ts",
+    "expect": "REFUSES A LEXER WHOSE TOKENS DO NOT COVER THE DOCUMENT",
+    "devOnly": false
+  },
+  {
+    "id": "claims/one-test-cannot-prove-two-claims",
+    "why": "The property that makes this register more than paperwork is that registering a claim means WRITING a test. Nothing required (test, expect) pairs to be unique, so all 55 claims could have bound to one uniquely named passing test and the check would report clean (#225). The #219 review demonstrated it by repointing one claim at a neighbouring claim's test: both the structural check and the test check stayed clean. This mutation drops the refusal, and the named case must then fail.",
+    "file": "scripts/claims-register.mjs",
+    "find": "    if (headings.length < 2) continue",
+    "replace": "    if (headings.length < 2 || true) continue",
+    "test": "src/claims-register.test.ts",
+    "expect": "REFUSES TWO CLAIMS BOUND TO ONE TEST",
+    "devOnly": false
+  },
+  {
+    "id": "claims/a-claim-matches-its-test-name-exactly",
+    "why": "`expect` was matched against the test's full name with `.includes`, so a SHORT string matched any longer name and a claim could be satisfied by a test written for a different sentence (#225). Matching the `it` title exactly closes it; 26 register entries were migrated from fragments to exact titles to make that possible, which is what the substring match had been hiding. This mutation restores the substring match, and the named case must then fail.",
+    "file": "scripts/claims-register.mjs",
+    "find": "      const hits = assertions.filter((a) => testTitle(a.fullName ?? '') === c.expect)",
+    "replace": "      const hits = assertions.filter((a) => (a.fullName ?? '').includes(c.expect))",
+    "test": "src/claims-register.test.ts",
+    "expect": "REFUSES A FRAGMENT OF A TEST NAME, which used to be accepted",
+    "devOnly": false
+  },
+  {
+    "id": "claims/a-bullet-cannot-rest-on-one-segment",
+    "why": "RECONSTRUCTION CANNOT SEE THIS ONE. A single segment holding a bullet's whole line rejoins the document line perfectly, so the reconstruction clause is satisfied while every sentence in the bullet rests on one test (#225). That is the per-bullet design #201 already disproved: \"There is no direct write tool\" is TRUE while the lifecycle sentence in the same bullet was FALSE, which is the exact class this register exists to catch. This mutation makes the clause unreachable, since a zero-segment bullet is already refused earlier.",
+    "file": "scripts/claims-register.mjs",
+    "find": "    if (segs.length === 1 && line !== `- **${b.heading}**`) {",
+    "replace": "    if (segs.length === 0 && line !== `- **${b.heading}**`) {",
+    "test": "src/claims-register.test.ts",
+    "expect": "REFUSES A BULLET HELD IN ONE SEGMENT, which reconstruction accepts",
+    "devOnly": false
+  },
+  {
+    "id": "claims/an-observation-needs-a-real-calendar-date",
+    "why": "The date was shape-checked only, so `9999-99-99` passed (#227). Worse, `new Date('2026-02-31')` silently ROLLS OVER to 2 March rather than failing, so a plausible-looking impossible date would have been accepted by any check that merely constructed a Date. Only a round trip through the ISO string catches it. An observation of another vendor's software is evidence, and evidence with an impossible date is not evidence. This mutation drops the round trip.",
+    "file": "scripts/claims-register.mjs",
+    "find": "  return d.toISOString().slice(0, 10) === v ? d : undefined",
+    "replace": "  return d",
+    "test": "src/claims-register.test.ts",
+    "expect": "REFUSES A SHAPE-VALID DATE THAT IS NOT A REAL DAY",
+    "devOnly": false
+  },
+  {
+    "id": "claims/an-observation-cannot-be-dated-in-the-future",
+    "why": "Nobody observed anything tomorrow, and a future date is either a typo or a placeholder nobody replaced (#227). This refusal is deliberately the only time-dependent clause in the register, and it is safe BECAUSE it can only go from red to green as time passes: it never reddens an unchanged repository, which is the property that keeps a gate from being disabled rather than satisfied. This mutation disables the comparison.",
+    "file": "scripts/claims-register.mjs",
+    "find": "        } else if (observedOn.getTime() > startOfDay(now).getTime()) {",
+    "replace": "        } else if (false && observedOn.getTime() > startOfDay(now).getTime()) {",
+    "test": "src/claims-register.test.ts",
+    "expect": "REFUSES AN OBSERVATION DATED IN THE FUTURE",
+    "devOnly": false
+  },
+  {
+    "id": "claims/an-observation-names-the-build-it-watched",
+    "why": "\"Claude Desktop masks the vault passphrase\" is not a fact about Claude Desktop, it is a fact about one BUILD of it: the same field was plain text on 2026-09-15 and masked on 2026-10-06, three weeks apart (#227). Without a version the reader cannot tell whether the observation describes the build they are running, and nobody can reproduce or retire it. The literal string \"unknown\" is accepted, because an observation made before anyone thought to note the version is weaker evidence and saying so is the point of this kind; an ABSENT field is refused, since it is indistinguishable from an unrecorded one. This mutation drops the requirement.",
+    "file": "scripts/claims-register.mjs",
+    "find": "        if (!s.clientVersion) {",
+    "replace": "        if (false && !s.clientVersion) {",
+    "test": "src/claims-register.test.ts",
+    "expect": "refuses an observation that does not name the client version",
+    "devOnly": false
+  },
+  {
+    "id": "claims/one-observation-per-segment",
+    "why": "The compound that prompted this held THREE sentences in one observed segment, and the middle one — \"ManyPortals declares the field sensitive\" — was a claim about THIS project's own manifest.json (#227). It was bound to no test, and it carried a date and a re-check instruction that had been measured for somebody else's user interface. A claim escaping the claim mechanism by hiding inside an observation is the exact class this register exists to catch. One observation, one sentence, one date, one re-check. This mutation raises the threshold so a two-sentence segment passes.",
+    "file": "scripts/claims-register.mjs",
+    "find": "        if (sentences.length > 1) {",
+    "replace": "        if (sentences.length > 2) {",
+    "test": "src/claims-register.test.ts",
+    "expect": "REFUSES AN OBSERVATION HOLDING MORE THAN ONE SENTENCE",
+    "devOnly": false
+  },
+  {
+    "id": "mcp/the-transport-redacts-too",
+    "why": "ok/fail only wrap HANDLER output, and a call the SDK rejects before dispatch never reaches a handler: the SDK answers it from the zod issue list, whose path carries the caller's property names. Its own entry, because the entry above is anchored on the handler path and a mutation there says nothing about this one (#184).",
+    "file": "src/mcp/server.ts",
+    "find": "      send(redactCredentialsDeep(message), options)\n",
+    "replace": "      send(message, options)\n",
+    "test": "src/mcp/credential-echo.test.ts",
+    "expect": "no rejected call echoes the credential back",
     "devOnly": false
   },
   {
@@ -500,6 +630,16 @@
     "devOnly": true
   },
   {
+    "id": "ref-scan/the-scan-does-not-stop-after-the-first-operand",
+    "why": "The dev-mode caller NAMES its surface, because the development tree cannot be scanned whole. `find \"$OPERANDS\"` is the ordinary bash slip for `find \"${OPERANDS[@]}\"` and it hands find only the FIRST operand, so the rest of the surface reports clean: `npm run verify` would cover src and silently stop covering public, which is #180 one surface over. The three argument refusals around it all fail loudly; this is the one that fails quiet (#180). RENAMED at #300: the old id claimed that every NAMED path is scanned, which is false — an operand that find prunes (a nested node_modules) or cannot traverse (a symlink) is not scanned and reports no finding. What this entry proves is narrower and is what its name now says.",
+    "file": "scripts/ref-scan.sh",
+    "find": "enum_to \"$LIST\" find \"${OPERANDS[@]}\" -name .git -prune -o -name node_modules -prune -o -type f -print0 || {\n",
+    "replace": "enum_to \"$LIST\" find \"$OPERANDS\" -name .git -prune -o -name node_modules -prune -o -type f -print0 || {\n",
+    "test": "src/ref-scan.test.ts",
+    "expect": "scans every path it is given, not just the first",
+    "devOnly": true
+  },
+  {
     "id": "command-paths/an-absent-script-fails-the-run",
     "why": "With the existence branch gone, a shipped command naming a file the tree does not hold reads as clean, which is the state the public repo was in for months (#121).",
     "file": "scripts/command-paths.mjs",
@@ -507,6 +647,16 @@
     "replace": "  if (existsSync(path) && !statSync(path).isFile()) {\n",
     "test": "src/command-paths.test.ts",
     "expect": "catches a workflow step that runs a script the tree does not hold",
+    "devOnly": false
+  },
+  {
+    "id": "command-paths/a-file-valued-input-is-checked-too",
+    "why": "`command-paths.mjs` read only `run:` bodies, so a workflow INPUT naming a repository file was invisible to it. Adding `node-version-file: .node-version` for #236 produced exactly the defect this script exists to prevent — a shipped workflow naming a file the publish allowlist had not copied — and `commands:check` reported CLEAN. PATH_RE would not have matched it either, since it only recognises script extensions. The clause is narrow on purpose: keys ending `-file` take paths, and a `${{ }}` expression is skipped because it cannot be resolved here. This mutation empties the list it checks.",
+    "file": "scripts/command-paths.mjs",
+    "find": "for (const { source, path } of inputs) {",
+    "replace": "for (const { source, path } of []) {",
+    "test": "src/command-paths.test.ts",
+    "expect": "CATCHES A FILE-VALUED with: INPUT NAMING A FILE THE TREE DOES NOT HOLD",
     "devOnly": false
   },
   {
@@ -527,6 +677,26 @@
     "replace": "if (false) {\n",
     "test": "src/version-check.test.ts",
     "expect": "refuses when the manifest and the package disagree",
+    "devOnly": false
+  },
+  {
+    "id": "version-check/the-verify-tag-instruction-must-name-this-release",
+    "why": "public/SECURITY.md told readers to verify the PREVIOUS release's tag, at 0.1.9 and again at 0.1.10, and version-check's as-of rule is deliberately scoped so it could not see it (#277). The first version of this guard scanned raw text and was wrong in both directions (#279, #281); the rule now applies only to the instruction a marker designates, and compares the whole tag token.",
+    "file": "scripts/version-check.mjs",
+    "find": "      if (tag !== `v${pkg}`) {\n",
+    "replace": "      if (false) {\n",
+    "test": "src/version-check.test.ts",
+    "expect": "refuses the previous release tag",
+    "devOnly": false
+  },
+  {
+    "id": "version-check/a-malformed-version-file-refuses-with-a-reason",
+    "why": "A manifest.json that is not valid JSON exited non-zero by accident, as an escaping SyntaxError stack, so the operator read a crash instead of a reason (#293, the #111 class).",
+    "file": "scripts/version-check.mjs",
+    "find": "    console.error(`  ✗ ${f} is not valid JSON: ${(e && e.message) || e}`)\n    process.exit(1)\n",
+    "replace": "    console.error(`  ✗ ${f} is not valid JSON: ${(e && e.message) || e}`)\n    process.exit(0)\n",
+    "test": "src/version-check.test.ts",
+    "expect": "refuses an unparseable manifest with a reason and no stack",
     "devOnly": false
   },
   {
@@ -580,6 +750,26 @@
     "devOnly": true
   },
   {
+    "id": "publish-sync/a-release-cannot-silently-revert-a-merge",
+    "why": "`read-tree HEAD` then `git add -A` makes the assembled content WIN for every file the assembler owns. Publishing has been incremental since #155, so a commit made directly on public main — a merged pull request, a one-line typo fix — keeps its COMMIT and loses its CONTENT at the next release, and nothing said so: the #166 postcondition compares path COUNT, not content, so a reverting release looked like every other release (#218). The failure is the worst shape available: a contributor sees the merge, and weeks later the change is gone with no failed build and nobody notified. The trigger is content OVERLAP rather than commit existence, because after a back-port the change is in dev too and nobody needs stopping. This mutation makes the comparison never match.",
+    "file": "scripts/publish-sync.sh",
+    "find": "      [ \"$f\" = \"$s\" ] && { hit=\"$hit$f\"$'\\n'; break; }",
+    "replace": "      false && { hit=\"$hit$f\"$'\\n'; break; }",
+    "test": "src/publish-sync.test.ts",
+    "expect": "REFUSES A RELEASE THAT WOULD OVERWRITE A FILE A FOREIGN COMMIT TOUCHED",
+    "devOnly": true
+  },
+  {
+    "id": "publish-sync/a-missing-release-tag-refuses",
+    "why": "The foreign-commit check (#218) separates a release commit from a direct edit by the last release TAG. Without one the two are indistinguishable, so the check must refuse rather than compare against nothing — the could-not-look-equals-nothing-found defect this codebase refuses in #108 and #109 and in every refusal branch of this script. This mutation makes the anchor always resolve, by naming a rev that exists in every repository, so the no-tag case stops refusing. RE-AIMED at #297, which rewrote release_tag_anchor and left this anchor matching nothing. The mutation is now the audit door's own refusal, which is the status its test reads.",
+    "file": "scripts/publish-sync.sh",
+    "find": "  echo \"       git said: $TAG_OUT\" >&2\n  exit 1\n",
+    "replace": "  echo \"       git said: $TAG_OUT\" >&2\n  exit 0\n",
+    "test": "src/publish-sync.test.ts",
+    "expect": "REFUSES A BASE WITH NO RELEASE TAG, rather than comparing against nothing",
+    "devOnly": true
+  },
+  {
     "id": "release-gate/a-mistyped-version-must-not-pass",
     "why": "A mistyped version queries a label nobody uses, returns nothing, and reads as an empty wave while every issue in the real wave is still open.",
     "file": "scripts/release-gate.sh",
@@ -587,6 +777,156 @@
     "replace": "if false; then\n",
     "test": "src/release-gate.test.ts",
     "expect": "refuses a mistyped version rather than reporting an empty wave clean",
+    "devOnly": true
+  },
+  {
+    "id": "plans/index-failure-must-not-fail-the-write",
+    "why": "An id-index append failure used to mark a write that HubSpot had already accepted as failed, conflating a fact about HubSpot with a fact about our own disk (#89).",
+    "file": "src/plans/index.ts",
+    "find": "      return publicErrorMessage(e)\n",
+    "replace": "      throw e\n",
+    "test": "src/plans/plans.test.ts",
+    "expect": "a write that succeeded is not recorded as failed when the id index cannot append",
+    "devOnly": false
+  },
+  {
+    "id": "plans/outcome-record-must-not-fail-the-write",
+    "why": "The SIBLING of the entry above, and the same defect one call site over. #89 stopped an id-index failure from marking a write that HubSpot had accepted as failed; the audit.record three lines below it had the identical shape and was not swept, so a sink failure on the OUTCOME line was caught by execute()'s own catch and became status 'failed', a `fail` event, and a rejection. SAFETY.md tells the operator a `fail` means it did not happen, so acting on the log re-ran the write (#183).",
+    "file": "src/plans/index.ts",
+    "find": "      this.recordOutcomeSafely({\n        type: 'execute',\n",
+    "replace": "      this.d.audit.record({\n        type: 'execute',\n",
+    "test": "src/plans/plans.test.ts",
+    "expect": "is not recorded as failed when its outcome line cannot be stored",
+    "devOnly": false
+  },
+  {
+    "id": "plans/foreign-id-in-a-property-value",
+    "why": "referencedIdsOf sees only the update target and the association ids, so a property VALUE equal to an id another portal owns was never looked at and the write validated and executed. The detection moved to src/safety/index.ts at #178; the id keeps its prefix because nothing but this register reads it.",
+    "file": "src/safety/index.ts",
+    "find": "    if (owners.length > 0) hits.push({ property, value, owners })\n",
+    "replace": "",
+    "test": "src/plans/plans.test.ts",
+    "expect": "catches a foreign id carried in a property value",
+    "devOnly": false
+  },
+  {
+    "id": "safety/property-tier-refreshes-the-index-itself",
+    "why": "Without its own refresh the property tier judges a write against a stale index, which has FEWER attributions, so the finding is missed rather than invented. It read correct only because both call sites followed a contamination check that had refreshed, which a comment recorded and nothing enforced (#176).",
+    "file": "src/safety/index.ts",
+    "find": "  index.refresh()\n  const hits: SuspectedCrossPortalRef[] = []\n",
+    "replace": "  const hits: SuspectedCrossPortalRef[] = []\n",
+    "test": "src/safety/safety.test.ts",
+    "expect": "the property tier sees a value another copy attributed",
+    "devOnly": false
+  },
+  {
+    "id": "plans/propose-refuses-a-finding-the-approval-never-saw",
+    "why": "With every finding treated as already approved, a value the index learned about AFTER validate passes the propose re-check, so a write the operator approved while it looked clean lands carrying a foreign id (#174).",
+    "file": "src/plans/index.ts",
+    "find": "  return found.filter((r) => !approvedKeys.has(suspectedRefKey(r)))\n",
+    "replace": "  return [] // mutated: every finding counts as already approved\n",
+    "test": "src/plans/plans.test.ts",
+    "expect": "propose refuses an entry the approved list never carried",
+    "devOnly": false
+  },
+  {
+    "id": "plans/a-reserved-stage-name-on-the-other-known-type",
+    "why": "The gate was INVERTED: being on a KNOWN object type is what EXEMPTED a reserved pipeline/stage name. unverifiableReferencePropsIn returned an empty list the instant the type was recognised, and setsReferenceProperty only ever looked up that type's OWN pair, so `tickets` with `dealstage` and `deals` with `hs_pipeline_stage` matched neither set: both validated clean and executed with no pipeline resolution at all, while a custom object setting `dealstage` was correctly denied. Stricter on the types it cannot verify than on the two it can (#186).",
+    "file": "src/plans/index.ts",
+    "find": "    props: Object.keys(op.properties).filter(\n      (k) => RESERVED_REFERENCE_PROPS.has(k.toLowerCase()) && !mine.has(k.toLowerCase()),\n    ),\n",
+    "replace": "    props: [], // mutated: a reserved name on a recognised type is exempted again\n",
+    "test": "src/plans/plans.test.ts",
+    "expect": "belonging to the OTHER known type is denied at validate",
+    "devOnly": false
+  },
+  {
+    "id": "plans/association-target-is-on-the-write-allow-list",
+    "why": "checkDraftAllowed read operation.objectType and operation.kind only, so an association's toType flowed from the tool schema through referencedTargetsOf into createDefaultAssociation without ever being compared to allowedObjects. A portal allowing notes alone could attach a note to a deals record, and in apply mode it did so with no human in the loop (#189).",
+    "file": "src/plans/index.ts",
+    "find": "    for (const a of input.operation.kind === 'create' ? (input.operation.associations ?? []) : []) {\n      if (!portal.allowedObjects.includes(a.toType)) {\n        throw new WritePlanError(\n          `association target object type \"${a.toType}\" is not allowed for portal \"${input.portalKey}\" (allowedObjects)`,\n        )\n      }\n    }\n",
+    "replace": "",
+    "test": "src/plans/plans.test.ts",
+    "expect": "refuses an association whose target object type is not in allowedObjects",
+    "devOnly": false
+  },
+  {
+    "id": "worktrees/a-stale-worktree-is-reported",
+    "why": "The rule that an agent worktree closes in the same sitting had no mechanism, so five were left behind at once, two holding six-day-old uncommitted changes across five gate files. The age comparison IS the design: invert it and the check reports clean over exactly the worktrees it exists to name, while an in-flight one still passes (#216).",
+    "file": "scripts/worktree-check.sh",
+    "find": "  if [ \"$AGE\" -lt \"$STALE_SECONDS\" ]; then continue; fi\n",
+    "replace": "  if [ \"$AGE\" -ge \"$STALE_SECONDS\" ]; then continue; fi\n",
+    "test": "src/worktree-check.test.ts",
+    "expect": "reports a worktree that has been there for days",
+    "devOnly": true
+  },
+  {
+    "id": "release-gate/cancelled-is-not-green",
+    "why": "A cancelled run produced no evidence, and cancelled is not a failure, so a greenness test written as \"no leg said failure\" accepts a run that proved nothing. Seen twice on 2026-10-05, once with a cross-platform leg that itself ended cancelled. The same could-not-look-reads-as-nothing-found defect as #108 and #109, one surface over (#212).",
+    "file": "scripts/release-gate.sh",
+    "find": "    [ \"${LINE%% *}\" = success ] || BAD=$((BAD + 1))\n",
+    "replace": "    [ \"${LINE%% *}\" != failure ] || BAD=$((BAD + 1))\n",
+    "test": "src/release-gate.test.ts",
+    "expect": "treats a cancelled cross-platform leg as not green",
+    "devOnly": true
+  },
+  {
+    "id": "release-gate/a-wave-blocked-from-outside-cannot-clear",
+    "why": "Clause (2) refuses while a wave holds open issues and tells the operator to close them or move them. That is advice nobody can take when one of those issues is BLOCKED by work scheduled for a later release: the wave can never clear, and the gate said nothing about why (#239). This clause supplies the reason, and it deliberately stays quiet for a blocker in the SAME wave, since clause (2) already names it and firing on every ordinary dependency edge is how a gate earns a habit of being overridden. A blocker with no wave label at all is the worse case and is reported as such, because unscheduled work has no release in which it will ever close. This mutation stops the accumulator growing, so the clause finds nothing.",
+    "file": "scripts/release-gate.sh",
+    "find": "      CROSS_WAVE=\"$CROSS_WAVE  #$NUM is blocked by #$DNUM (${DWAVE:-no wave})\"$'\\n'",
+    "replace": "      CROSS_WAVE=\"$CROSS_WAVE\"",
+    "test": "src/release-gate.test.ts",
+    "expect": "REFUSES AND NAMES THE BLOCKER WHEN IT IS IN A LATER WAVE",
+    "devOnly": true
+  },
+  {
+    "id": "publish-sync/a-copied-file-missing-from-the-index-refuses",
+    "why": "Every audit in the assembler reads the WORKING TREE; the commit comes from `git add -A`, which silently omits an ignored untracked path. An excludesFile naming src/index.ts produced 128 audited files, every audit green, and an index of 69 source files with no src/index.ts (#295). Audited on disk is not published (#108, #109).",
+    "file": "scripts/publish-sync.sh",
+    "find": "  comm -23 \"$m\" \"$i\"\n",
+    "replace": "  comm -23 \"$m\" \"$m\"\n",
+    "test": "src/publish-sync.test.ts",
+    "expect": "refuses when a copied file never reaches the commit index",
+    "devOnly": true
+  },
+  {
+    "id": "publish-sync/a-non-release-tag-is-not-an-anchor",
+    "why": "`describe --tags` returns any tag and prefers one on the target commit, so a `checkpoint` tag on a direct public correction became the anchor: the foreign-change window is then empty and the decision that stops a release silently reverting that correction is skipped (#297, #218). The mutation restores the pre-fix one-liner, because --match and the grammar check each refuse on their own and mutating either leaves the other standing.",
+    "file": "scripts/publish-sync.sh",
+    "find": "release_tag_anchor() {\n  local tag\n  tag=\"$(git -C \"$1\" describe --tags --abbrev=0 --match \"$RELEASE_TAG_GLOB\" \"$2\" 2>&1)\" || {\n    printf '%s\\n' \"$tag\"\n    return 1\n  }\n  case \"$tag\" in\n    v[0-9]*.[0-9]*.[0-9]*) printf '%s\\n' \"$tag\" ;;\n    *)\n      printf 'resolved %s, which is not a release tag\\n' \"$tag\"\n      return 1\n      ;;\n  esac\n}",
+    "replace": "release_tag_anchor() {\n  git -C \"$1\" describe --tags --abbrev=0 \"$2\" 2>&1\n}",
+    "test": "src/publish-sync.test.ts",
+    "expect": "refuses a non-release tag as the foreign-change anchor",
+    "devOnly": true
+  },
+  {
+    "id": "publish-sync/an-audit-variable-cannot-hijack-an-assembly",
+    "why": "The audit doors dispatch on whether a variable is SET and run before any assembly, so an inherited AUDIT_FOREIGN_FILES made `--out X --no-verify` exit 0, print clean, and create no output (#299).",
+    "file": "scripts/publish-sync.sh",
+    "find": "if [ \"$ASSEMBLY_ARGS\" -eq 1 ]; then\n",
+    "replace": "if false; then\n",
+    "test": "src/publish-sync.test.ts",
+    "expect": "refuses an audit variable supplied beside assembly arguments",
+    "devOnly": true
+  },
+  {
+    "id": "release-gate/the-version-must-belong-to-the-artifact",
+    "why": "The gate checked that a wave label EXISTS, not that it belongs to the artifact whose SHA it queries, so `release-gate.sh 0.1.9` returned 0 at a 0.1.10 commit with both waves present (#296).",
+    "file": "scripts/release-gate.sh",
+    "find": "[ \"$VERSION\" = \"$PKG_VERSION\" ] || {\n",
+    "replace": "[ \"$VERSION\" != \"$PKG_VERSION\" ] || {\n",
+    "test": "src/release-gate.test.ts",
+    "expect": "refuses a version that does not belong to the artifact being checked",
+    "devOnly": true
+  },
+  {
+    "id": "release-gate/the-cross-platform-selector-must-select",
+    "why": "The projection lived in a `--jq` expression and the test stub answered with already-formatted lines while ignoring --jq, so replacing the selector with one matching NO JOBS left all 29 tests green: the fake answered downstream of the step that was broken (#298). The projection is production code now and the fixtures are raw job JSON.",
+    "file": "scripts/release-gate.sh",
+    "find": "CROSS_PLATFORM_PREFIX='cross-platform'\n",
+    "replace": "CROSS_PLATFORM_PREFIX='never-a-real-job-prefix'\n",
+    "test": "src/release-gate.test.ts",
+    "expect": "passes when a cross-platform run for this commit is green",
     "devOnly": true
   }
 ]

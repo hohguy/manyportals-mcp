@@ -37,6 +37,30 @@ describe('vault encrypt/decrypt round trip', () => {
   it('refuses an empty passphrase', () => {
     expect(() => encryptVaultTokens(TOKENS, '  ')).toThrow(VaultError)
   })
+
+  /**
+   * SAFETY.md "Token values stay out of results.", the sentence (#206): "The vault is only
+   * as private as its passphrase."
+   *
+   * Registered in scripts/claims-register.json. "Only" cuts both ways and both halves run
+   * here: the passphrase ALONE opens a STORED envelope — no machine binding, no keychain,
+   * nothing else carried over from where it was written — and nothing else opens it.
+   *
+   * Read back through a file reader rather than from the value the encrypt call just
+   * returned, which is what the round-trip test above does. The sentence is about a vault
+   * at rest that someone else may be holding, so the inputs to the open have to be the
+   * stored bytes and the one string, and nothing more.
+   */
+  it('the passphrase is the only secret the envelope needs, and the only thing that opens it', () => {
+    const stored = encryptVaultTokens(TOKENS, PASS)
+    expect(readVaultFile('/carried/away/tokens.vault', PASS, () => stored)).toEqual(TOKENS)
+
+    // Nothing else opens it, so the passphrase is the whole of its privacy. A padded or
+    // recased passphrase is a DIFFERENT passphrase: nothing here normalizes it.
+    for (const wrong of [`${PASS} `, ` ${PASS}`, PASS.toUpperCase(), '']) {
+      expect(() => decryptVaultTokens(stored, wrong)).toThrow(VaultError)
+    }
+  })
 })
 
 describe('vault decryption failure posture (sanitized, fail closed)', () => {
@@ -242,5 +266,35 @@ describe('token-source chain precedence with a vault (env → vault → plaintex
     expect(resolve('PORTAL_A', portal('TOK_A'))).toBe('from-env') // env beats vault
     expect(resolve('PORTAL_B', portal())).toBe('from-vault') // vault beats file
     expect(resolve('PORTAL_C', portal())).toBe('from-file') // file still works
+  })
+
+  /**
+   * SAFETY.md "Token values stay out of results.", the sentence (#206): "At rest, you can
+   * keep tokens in an encrypted vault rather than a plain file."
+   *
+   * Registered in scripts/claims-register.json. Two halves, so both run here: the vault is
+   * a COMPLETE token store — every portal resolves from it with nothing in the plaintext
+   * position at all — and at rest the stored bytes hold none of those values.
+   *
+   * The EMPTY file source is the point of the first half. The test above keeps a populated
+   * file behind the vault, so it cannot distinguish "the vault answered" from "the vault
+   * answered first", and "rather than a plain file" is a claim about running without one.
+   */
+  it('a vault alone resolves every portal, and at rest holds none of those tokens', () => {
+    const stored = encryptVaultTokens(TOKENS, PASS)
+    const vault: TokenSource = new MapTokenSource(
+      readVaultFile('/anywhere/tokens.vault', PASS, () => stored),
+    )
+    const resolve = createTokenResolver([
+      new EnvTokenSource({}),
+      vault,
+      new MapTokenSource({}), // no plaintext file behind it
+    ])
+    expect(resolve('PORTAL_A', portal())).toBe(TOKENS.PORTAL_A)
+    expect(resolve('PORTAL_B', portal())).toBe(TOKENS.PORTAL_B)
+
+    for (const secret of [TOKENS.PORTAL_A, TOKENS.PORTAL_B, 'PORTAL_A', PASS]) {
+      expect(stored, 'the stored vault carries this in the clear').not.toContain(secret)
+    }
   })
 })

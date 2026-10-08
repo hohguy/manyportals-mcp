@@ -175,6 +175,15 @@ const NOT_A_GATE = {
   'scripts/cred-pattern.sh': 'sets one variable; sourced, never executed',
   'scripts/prose-pattern.sh': 'sets three variables; sourced, never executed',
   'scripts/deny-pattern.sh': 'sets one variable; sourced, never executed',
+  'scripts/claims-reporter.mjs':
+    'reports facts and decides nothing. It writes one line per test holding the exact ' +
+    'full name, the state, and whether the test was declared an expected failure; the ' +
+    'JUDGEMENT about all three lives in claims-register.mjs and is registered there, ' +
+    'including claims/an-expected-failure-test-cannot-prove-a-claim, whose mutation ' +
+    'simulates this reporter withholding the flag. Its one refusal, an unset ' +
+    'CLAIMS_REPORT_FILE, is a fail-closed precondition rather than a decision: without ' +
+    'it the reporter would write nowhere and the register would read an absent file ' +
+    '(#223).',
   'scripts/guard-register.mjs':
     'this runner; its own failure modes are covered by src/guard-register.test.ts',
   'scripts/publish-sync.sh':
@@ -186,7 +195,8 @@ const NOT_A_GATE = {
     'them; it was 18 by the time anyone counted, so the number is gone rather ' +
     'than restated, because nothing updates it (#121). NOT all of it: the HEAD source-count comparison ' +
     'and the node_modules ordering assertion are its own ' +
-    'decisions and are unregistered (#124). An earlier version of this line claimed ' +
+    'decisions and are unregistered (#124), as is the `git log` failure branch inside ' +
+    "#218's foreign-commit check. An earlier version of this line claimed " +
     '"every safety decision is delegated", which was false, and #117 was closed partly ' +
     'on the strength of it.',
 }
@@ -275,6 +285,28 @@ const REFUSAL_BASELINE = {
   // in the same function are `return 2`, which this grammar does not recognise; it sees
   // `return 1` and not other return values.
   'scripts/build-mcpb.sh': 23,
+  // 2 at #94: the two `process.exit(1)` sites in main() — one for a register it cannot
+  // read, one for the verdict. Both registered through the structural clauses, which
+  // src/claims-register.test.ts drives case by case; the load-bearing clause carries its
+  // own entry, `claims/an-unregistered-bullet-is-refused`.
+  // 1 at #223: the single `throw new` when CLAIMS_REPORT_FILE is unset. That is a
+  // refusal rather than a guard: a reporter with nowhere to write would otherwise write
+  // nowhere and the register would read an absent file. The DECISION this file exists for
+  // is the `fails` flag it reports, and that is registered against claims-register.mjs,
+  // because removing the flag from the report is what the mutation has to simulate.
+  'scripts/claims-reporter.mjs': 1,
+  // 2 -> 3 when runTestFile stopped using `npx` (#256). On Windows `npx` is `npx.cmd`,
+  // which CreateProcess cannot resolve without a shell, so every claim failed with
+  // `spawnSync npx ENOENT`. It now invokes vitest's own entry with `process.execPath` and
+  // refuses if that entry is absent.
+  //
+  // THE NEW SITE IS UNREGISTERED, and the reason is that removing it does not change the
+  // OUTCOME. Without the existsSync check, `execFileSync` on a missing entry throws anyway
+  // and `checkTestsPassed` converts that to the same refusal. The check buys a message that
+  // names the path and says `npm ci`, not a decision. A guard proving "it still refuses"
+  // would pass with the check deleted, which is the vacuous shape this register exists to
+  // refuse.
+  'scripts/claims-register.mjs': 3,
   'scripts/command-paths.mjs': 1,
   'scripts/cred-scan-tree.sh': 7,
   'scripts/credscan.sh': 6,
@@ -296,7 +328,40 @@ const REFUSAL_BASELINE = {
   // back, and without the existence check reads as "nothing open" while the real wave
   // is untouched. The query-failure pair are the #108 class and are tested too, but the
   // typo is the one that would have shipped unnoticed.
-  'scripts/release-gate.sh': 8,
+  //
+  // 8 -> 11 when #212 added the CROSS-PLATFORM clause. Three sites, counted with
+  // refusalSites rather than by eye, and all three are "cannot look": the release commit's
+  // SHA being unreadable (1), the run list for that SHA being unreadable (1), and a run's
+  // jobs being unreadable (1). Each refuses rather than treating an unanswerable question
+  // as a green answer, which is the #108/#109 class the rest of this script is built on.
+  // The clause's own verdict added NO site: the wave branch's `exit 1` and the new one are
+  // now a single verdict at the end, because the old shape returned 0 on --anyway before
+  // any later clause could run, so an override granted for open issues would have waived a
+  // red platform result it was never told about.
+  //
+  // ALSO REGISTERED: release-gate/cancelled-is-not-green. Of the three new sites none is
+  // the silent one; the silent one is the comparison BETWEEN them. `cancelled` is not a
+  // failure, so a greenness test written as "no leg said failure" reports green over a run
+  // that produced no evidence at all. That happened twice on 2026-10-05, once with a leg
+  // that itself ended cancelled, and it is the one branch here whose wrong answer looks
+  // exactly like a right one.
+  // 11 -> 12 with #239's cross-wave blocker clause. The one new site is its could-not-look
+  // refusal: an unreadable `dependencies/blocked_by` means "whether this wave can ever clear
+  // is unknown", and treating that as "nothing blocking" is the defect this gate has been
+  // written the wrong way round for twice (#108, #109). REGISTERED, as
+  // release-gate/a-wave-blocked-from-outside-cannot-clear, though the mutation targets the
+  // DETECTION rather than this branch: a guard that proved only the refusal branch runs would
+  // say nothing about whether the clause finds anything.
+  // 12 -> 15 at the release-machinery review. Three sites, all #296's artifact binding: the
+  // version file cannot be read (1), the version does not match package.json (1), and the
+  // node invocation's own failure path (1). Two are REGISTERED below; the pair is driven by
+  // RELEASE_GATE_PKG, the same kind of door as RELEASE_GATE_CMD.
+  // 15 -> 18 at #298, when the cross-platform projection moved out of a `--jq` expression
+  // and into the script so the tests could reach it. Three sites: the projection's two
+  // refusals (not JSON, no jobs array) and the caller's refusal when it cannot read them.
+  // REGISTERED below as one entry, because the mutation that matters is the selector itself:
+  // it previously survived the whole suite.
+  'scripts/release-gate.sh': 18,
   'scripts/prepublish-guard.sh': 12,
   // 13 -> 14 when the OVERCLAIM pattern was added: published prose claimed routing of
   // every ACTION while the code routes every WRITE and lets reads use the selected
@@ -325,11 +390,92 @@ const REFUSAL_BASELINE = {
   // REGISTERED: publish-sync/base-history-must-refuse-private. The detection is
   // driveable through AUDIT_BASE_DIR and src/publish-sync.test.ts supplies the input
   // that makes it fire, which is a fixture history containing project-docs.
-  'scripts/publish-sync.sh': 49,
-  'scripts/ref-scan.sh': 13,
+  //
+  // 49 -> 51 when #166 added the POSTCONDITION on read-tree. Two sites, one guard: the
+  // refusal and the staging wipe beside it, the pair every other fatal in that script
+  // uses. DELIBERATELY UNREGISTERED, with the reason on the ticket rather than assumed.
+  // The input that makes it fire is "remove the read-tree line", and the staging
+  // sequence cannot be handed that input by a test: it needs the whole assembler, and
+  // the assembler refuses a dirty dev tree by design, which is why no committed test
+  // has ever run it end to end. It runs on the REAL path on every release instead, so
+  // the thing it protects is also what exercises it. Supplied by hand against the
+  // published tree on 2026-10-03; the measurement is the table on #166.
+  //
+  // #171 landed in the same patch and added NO site: four `git config` writes that give
+  // the staging repo its own tagger identity and tag-signing config. They configure, so
+  // they are not a gate; a failed write aborts under `set -e` with no literal status for
+  // this grammar to see, and there is nothing a caller could feed them.
+  // 51 -> 62 with #218's foreign-commit check and its two audit doors. The eleven, and
+  // which of them carry a registered mutation:
+  //
+  //   1  --anyway with no reason (exit 2). A precondition on the OVERRIDE rather than a
+  //      decision about the publish, and the same shape release-gate.sh already uses.
+  //   2  the AUDIT_FOREIGN_FILES door, clean and refusing. It REPORTS a decision rather
+  //      than making one: publish-sync/a-release-cannot-silently-revert-a-merge.
+  //   2  the AUDIT_TAG_DIR door, likewise, for publish-sync/a-missing-release-tag-refuses.
+  //   2  the live no-tag refusal and its staging wipe. Same registered decision, reached
+  //      through the shared release_tag_anchor so the door and the live path cannot
+  //      drift (#125).
+  //   2  the live overwrite refusal and its staging wipe. Registered.
+  //   2  UNREGISTERED, and said so rather than implied: `git log <tag>..<base>` failing
+  //      after the range already resolved. A could-not-look refusal with no door, because
+  //      the inputs that make git fail there are git's rather than this script's, and a
+  //      door for it would prove the branch runs, not that the decision is right.
+  // 62 -> 72 at the release-machinery review. Ten sites, counted with refusalSites rather
+  // than by eye:
+  //   #295 the manifest-vs-index comparison (2: a copied path missing from the commit, and
+  //        an empty manifest) plus their staging_wipe guards (2). REGISTERED below: the
+  //        input is an ignore rule reaching the staged tree, which a fixture can supply.
+  //   #297 the release-tag anchor's two refusals (2) — no matching tag, and a resolved tag
+  //        outside the grammar. REGISTERED below.
+  //   #299 the audit-variable exclusion (1), one `exit 2` for an audit variable arriving
+  //        beside assembly arguments. REGISTERED below.
+  //   #302 the anchored deny compare is a `case`, which this grammar does not count.
+  //   #295 again, after manifest_gap was extracted so a test could drive the decision through
+  //        a door rather than an assembly: its two `return 2` paths and the door's own
+  //        `exit 1`/`exit 0` (3). The door's refusal is covered by the registered manifest
+  //        entry; its success path is a PASS, not a refusal, and the grammar counts every
+  //        literal exit.
+  'scripts/publish-sync.sh': 75,
+  // 13 -> 15 when #180 gave this script an optional PATH LIST, so `npm run verify` can
+  // run the same pattern and the same exemption list over the development tree's shipped
+  // surface instead of leaving a release attempt to find out. Counted with refusalSites
+  // rather than by eye: the single "unknown argument" refusal became three, because an
+  // argument is now a path and there are three ways for one not to be. A flag, which is
+  // the old case; a path that leaves the tree, absolute or through a `..` segment, which
+  // the whole-path exemption comparison could not speak about; and a named path the tree
+  // does not hold, which would otherwise scan less than the caller asked for and still
+  // exit 0.
+  //
+  // REGISTERED: ref-scan/every-named-path-is-scanned, and it is NOT one of those three.
+  // All three refuse loudly. The registered decision is the enumeration they feed, where
+  // `find "$OPERANDS"` in place of `find "${OPERANDS[@]}"` hands find only the FIRST
+  // operand and reports the rest of the surface clean, so verify would cover src and
+  // silently stop covering public. src/ref-scan.test.ts supplies the input that makes it
+  // fire: a private reference in the LAST path named.
+  'scripts/ref-scan.sh': 15,
   'scripts/source-guard.sh': 5,
-  'scripts/version-check.mjs': 3,
+  // 3 -> 5 at #293. Two sites, both in read(): an unreadable version file, and one that is
+  // not valid JSON. A malformed manifest.json used to exit non-zero by ACCIDENT, as an escaping
+  // SyntaxError stack, which is the #111 class the document-root path already handled. The
+  // JSON-parse site IS registered below, because a test can supply the input. The
+  // cannot-read site is DECLARED UNPINNED: it needs a file that exists and cannot be read, which
+  // depends on the host's permission model and is the kind of fixture #96 skips on Windows.
+  'scripts/version-check.mjs': 5,
   'scripts/staging-guard.sh': 17,
+  // NEW at 0.1.10 (#216). Six sites, counted with refusalSites rather than by eye: no
+  // usable stat(1) (1), not inside a git repository (1), the main checkout not being
+  // findable (1), at least one worktree that could not be read (1), at least one stale
+  // worktree (1), and the no-worktrees-directory case (1) — which is an `exit 0` that this
+  // grammar counts because it counts every literal exit, and which is a PASS, not a
+  // refusal. Said plainly so the number is not read as six guards.
+  //
+  // REGISTERED: worktrees/a-stale-worktree-is-reported, and it is NONE of those six. The
+  // decision this script makes is the AGE COMPARISON, which is not an exit at all: invert
+  // it and every exit above still works while the check reports clean over exactly the
+  // worktrees it exists to name. That is the shape the whole register exists for, and it
+  // is why the count is not the inventory.
+  'scripts/worktree-check.sh': 6,
 }
 
 /** Count refusal sites in one file, ignoring comment lines. */

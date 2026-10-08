@@ -36,9 +36,9 @@ const LAYOUT = readFileSync(join(REPO, '.manyportals-layout'), 'utf8').trim()
 
 const asRoot = typeof process.getuid === 'function' && process.getuid() === 0
 
-function scan(dir: string): { rc: number; out: string } {
+function scan(dir: string, paths: string[] = []): { rc: number; out: string } {
   try {
-    const out = execFileSync('bash', ['scripts/ref-scan.sh', dir], {
+    const out = execFileSync('bash', ['scripts/ref-scan.sh', dir, ...paths], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -153,3 +153,130 @@ describe.skipIf(process.platform === 'win32' || LAYOUT !== 'dev')('ref-scan.sh',
     rmSync(d, { recursive: true, force: true })
   })
 })
+
+/**
+ * THE DEV-MODE SCAN: the same pattern and the same exemption list, over named paths
+ * inside a tree rather than the whole of it (#180).
+ *
+ * The gate used to run only from inside publish-sync.sh, against the assembled tree. So
+ * a production file could name a private document, `npm run verify` stayed green, and
+ * the repository could not cut a release. That is not hypothetical: src/plans/index.ts
+ * carried such a citation from 22013b5 until 6cc6ea8, and only a release attempt could
+ * have said so. The first case below is that defect, reproduced, scanned the way verify
+ * now scans it.
+ *
+ * The development tree cannot be scanned whole, which is why this mode takes paths: the
+ * private decision history is full of these strings by design. Narrowing is all a
+ * caller may do, and the cases below pin both directions of that.
+ */
+describe.skipIf(process.platform === 'win32' || LAYOUT !== 'dev')(
+  'ref-scan.sh over named paths',
+  () => {
+    it('refuses a src file that names a private doc, which is what a release found', () => {
+      const d = tree({
+        'src/plans/index.ts': `/** recorded in ${PRIVATE_REF}audits/2026-10-04-review.md */\n`,
+        'public/README.md': '# nothing private here\n',
+        // The private tree itself, assembled rather than written literally for the
+        // reason PRIVATE_REF is. It is here to prove the scan NARROWED: a whole-tree
+        // scan of a dev layout is all hits and tells nobody anything.
+        [`${PRIVATE_REF}notes.md`]: `${PRIVATE_REF}notes.md\n`,
+      })
+      const r = scan(d, ['src', 'public'])
+      expect(r.rc).toBe(1)
+      expect(r.out).toContain('src/plans/index.ts')
+      expect(r.out).not.toContain('notes.md')
+      rmSync(d, { recursive: true, force: true })
+    })
+
+    it('scans every path it is given, not just the first', () => {
+      // `find "$OPERANDS"` in place of `find "${OPERANDS[@]}"` hands find only the FIRST
+      // operand, and the rest of the surface then reads as clean: verify would cover src
+      // and silently stop covering public. The reference sits in the LAST path on
+      // purpose, because a case whose hit is in the first cannot tell those apart.
+      const d = tree({
+        'src/index.ts': 'export const x = 1\n',
+        'public/docs/USAGE.md': `See ${PRIVATE_REF}notes.md\n`,
+      })
+      const r = scan(d, ['src', 'public'])
+      expect(r.rc).toBe(1)
+      expect(r.out).toContain('public/docs/USAGE.md')
+      rmSync(d, { recursive: true, force: true })
+    })
+
+    it('still exempts by whole path when only part of the tree is scanned', () => {
+      // Not a formality. src/source-guard.test.ts holds the reference ON PURPOSE, to
+      // prove the guard it names works, so an exemption that applied only in the
+      // assembler's whole-tree mode would make the new verify step fail on the test
+      // suite that proves these gates can fire.
+      const d = tree({
+        'src/source-guard.test.ts': `const REF = "${PRIVATE_REF}architecture.md"\n`,
+        'src/index.ts': 'export const x = 1\n',
+      })
+      expect(scan(d, ['src']).rc).toBe(0)
+      rmSync(d, { recursive: true, force: true })
+    })
+
+    it('fails closed when a named path is not in the tree', () => {
+      // A surface that was RENAMED must not read as clean, which is a gate satisfied by
+      // deleting part of its own input (#113). It is also why this mode cannot be handed
+      // to a shipped package.json script: `public/` does not exist in the assembled
+      // tree, and this says so rather than passing over it.
+      const d = tree({ 'src/index.ts': 'export const x = 1\n' })
+      const r = scan(d, ['src', 'public'])
+      expect(r.rc).toBe(2)
+      expect(r.out).toContain('failing closed')
+      rmSync(d, { recursive: true, force: true })
+    })
+
+    it('still refuses a flag, so no caller can widen what is looked at', () => {
+      const d = tree({ 'src/index.ts': 'export const x = 1\n' })
+      const r = scan(d, ['--exclude-dir=src'])
+      expect(r.rc).toBe(2)
+      expect(r.out).toContain('unknown argument')
+      rmSync(d, { recursive: true, force: true })
+    })
+
+    it('scans the whole tree when given no path at all, as the assembler needs', () => {
+      // Both modes over one fixture: the file outside src is found when no path is
+      // named, and not found when `src` is. publish-sync.sh passes no path and depends
+      // on this half behaving exactly as it did, including the `./` the enumeration
+      // produces.
+      const d = tree({
+        'src/index.ts': 'export const x = 1\n',
+        'docs/USAGE.md': `See ${PRIVATE_REF}notes.md\n`,
+      })
+      const whole = scan(d)
+      expect(whole.rc).toBe(1)
+      expect(whole.out).toContain('./docs/USAGE.md')
+      expect(scan(d, ['src']).rc).toBe(0)
+      rmSync(d, { recursive: true, force: true })
+    })
+  },
+)
+
+/**
+ * THE MIRROR ITSELF (#180). Everything above drives fixtures; this one asserts the
+ * property over THIS repository, which is the gate that was missing.
+ *
+ * It lives in the test suite rather than in a package.json script, and that was
+ * measured rather than preferred: package.json SHIPS, and the assembler's audit gate
+ * (E) runs scripts/command-paths.mjs over the staged tree, where a `verify` step naming
+ * scripts/ref-scan.sh is a command naming a file the public tree does not hold. Adding
+ * one there refuses the assembly with `runs scripts/ref-scan.sh, which is not in this
+ * tree` — the #180 failure mode, caused by the fix for #180. `npm run verify` runs
+ * `npm test`, so the gate is local either way, and src/egress.test.ts already asserts a
+ * property of the real src/ tree from inside the suite.
+ */
+describe.skipIf(process.platform === 'win32' || LAYOUT !== 'dev')(
+  'the shipped surface of this tree',
+  () => {
+    it('names no private document in src or public', () => {
+      const r = scan(REPO, ['src', 'public'])
+      // The lines first: a failure should name the file and the sentence, not just a
+      // status. src/source-guard.test.ts is expected to hit the pattern and to be
+      // exempt, so a non-empty stdout here is a real finding.
+      expect(r.out.trim()).toBe('')
+      expect(r.rc).toBe(0)
+    })
+  },
+)

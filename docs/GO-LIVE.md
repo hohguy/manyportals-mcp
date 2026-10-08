@@ -1,6 +1,8 @@
 # Your go-live check
 
-This is the check you run before you trust ManyPortals with real writes. It is the first time the server talks to live HubSpot. Until it passes on every portal you use, treat the setup as unconfirmed and do not use it to write to real data.
+This is the set of read-only checks you run yourself before you trust ManyPortals with real writes. Until it passes on every portal you use, treat the setup as unconfirmed and do not use ManyPortals to write to real data.
+
+Running these checks is not a precondition the software enforces. Starting the server checks token identity for each portal that has a hub ID configured, by asking HubSpot which account the token belongs to; that call reads no records, and a portal left without a hub ID is skipped, so a setup where no portal has a hub ID makes no call at all. Once the server has started, the read tools work whether or not you have run these checks.
 
 > **Your tokens stay with you.** You run every step here with your real tokens, and the tokens never reach the AI. Each command prints a safe summary only: hub IDs, counts, pass or fail, and messages that contain no secrets. It is safe to paste that output back to the assistant, which already knows your portal keys. It also holds your portal labels and your real hub IDs, and the assistant sends whatever it reads to whichever provider runs it, so remove those first if that matters to you. Never paste a token.
 
